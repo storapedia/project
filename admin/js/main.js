@@ -22,14 +22,15 @@ const currencyFormatter = new Intl.NumberFormat('en-US', { style: 'currency', cu
 
 const faIcons = ["fas fa-shield-alt", "fas fa-video", "fas fa-fire-extinguisher", "fas fa-key", "fas fa-snowflake", "fas fa-box-open", "fas fa-car", "fas fa-motorcycle", "fas fa-wifi", "fas fa-plug", "fas fa-user-shield", "fas fa-clock", "fas fa-thermometer-half", "fas fa-wind", "fas fa-lightbulb", "fas fa-lock", "fas fa-water", "fas fa-person-shelter", "fas fa-truck-moving", "fas fa-temperature-high"];
 
-    {{ .Env.NAMA_VARIABEL }}
-    const STORAPEDIA_API_KEY = '{{ .Env.STORAPEDIA_API_KEY }}';
-    const STORAPEDIA_AUTH_DOMAIN = '{{ .Env.STORAPEDIA_AUTH_DOMAIN }}';
-    const STORAPEDIA_PROJECT_ID = '{{ .Env.STORAPEDIA_PROJECT_ID }}';
-    const STORAPEDIA_STORAGE_BUCKET = '{{ .Env.STORAPEDIA_STORAGE_BUCKET }}';
-    const STORAPEDIA_MESSAGING_SENDER_ID = '{{ .Env.STORAPEDIA_MESSAGING_SENDER_ID }}';
-    const STORAPEDIA_APP_ID = '{{ .Env.STORAPEDIA_APP_ID }}';
-    const STORAPEDIA_DATABASE_URL = '{{ .Env.STORAPEDIA_DATABASE_URL }}';
+const firebaseConfig = {
+    apiKey: STORAPEDIA_API_KEY,
+    authDomain: STORAPEDIA_AUTH_DOMAIN,
+    projectId: STORAPEDIA_PROJECT_ID,
+    storageBucket: STORAPEDIA_STORAGE_BUCKET,
+    messagingSenderId: STORAPEDIA_MESSAGING_SENDER_ID,
+    appId: STORAPEDIA_APP_ID,
+    databaseURL: STORAPEDIA_DATABASE_URL
+};
 
     const Maps_API_KEY = '{{ .Env.MAPS_API_KEY }}';
 
