@@ -82,14 +82,14 @@ function setupInstallBanner() {
     });
 }
 
-// --- Google Maps Loading Logic ---
+// --- Google Maps Loading Logic (Corrected) ---
 /**
- * Memuat script Google Maps menggunakan API Key dari config global.
+ * Loads the Google Maps script using the API Key from the global config.
  */
 function loadGoogleMapsScript() {
-    if (document.getElementById('google-maps-script')) return; 
+    if (document.getElementById('google-maps-script')) return;
 
-    // Ambil kunci API dari window.APP_CONFIG yang di-set oleh firebase-init.js
+    // Get API key from window.APP_CONFIG set by firebase-init.js
     const MAPS_API_KEY = window.APP_CONFIG?.MAPS_API_KEY;
     if (!MAPS_API_KEY) {
         console.error("Maps API Key not found in window.APP_CONFIG. Maps feature will be disabled.");
@@ -98,21 +98,23 @@ function loadGoogleMapsScript() {
 
     const script = document.createElement('script');
     script.id = 'google-maps-script';
-    // Gunakan 'storamaps_initMap' sebagai nama callback global
+    
+    // PERBAIKAN KUNCI: Membuat URL dengan benar menggunakan variabel MAPS_API_KEY.
     script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_API_KEY}&libraries=places,geometry&callback=storamaps_initMap`;
+    
     script.async = true;
     script.defer = true;
     document.head.appendChild(script);
 }
 
 /**
- * PERBAIKAN KUNCI: Fungsi callback ini harus ada di scope global.
- * Google akan memanggil fungsi ini setelah script selesai dimuat.
+ * KEY FIX: This callback function must be in the global scope.
+ * Google will call this function after the script has finished loading.
  */
 window.storamaps_initMap = function() {
     console.log("✅ Google Maps API is loaded and ready.");
-    // Set sebuah "bendera" global untuk menandakan bahwa API sudah aman digunakan
-    window.isGoogleMapsReady = true; 
+    // Set a global flag to indicate that the API is safe to use
+    window.isGoogleMapsReady = true;
 };
 
 
@@ -165,14 +167,14 @@ async function main() {
         window.addEventListener('resize', handleResize);
         setupInstallBanner();
 
-        // 1. Inisialisasi Firebase. Ini juga akan mengambil config dari Netlify
-        //    dan seharusnya menyimpan API Key di `window.APP_CONFIG`.
+        // 1. Initialize Firebase. This will also fetch the config from Netlify
+        //    and should store the API Key in `window.APP_CONFIG`.
         await initializeFirebase();
         
-        // 2. Setelah Firebase siap dan config dimuat, panggil fungsi untuk memuat script Maps.
+        // 2. After Firebase is ready and config is loaded, call the function to load the Maps script.
         loadGoogleMapsScript();
 
-        // 3. Daftarkan semua rute aplikasi.
+        // 3. Register all app routes.
         registerRoute('/', Home);
         registerRoute('/map', Map);
         registerRoute('/bookings', Bookings);
@@ -184,7 +186,7 @@ async function main() {
             render: async () => `<div class="page-header"><h2 class="page-title">Page Not Found</h2></div>`
         });
 
-        // 4. Inisialisasi router dan navigasi ke rute awal.
+        // 4. Initialize the router and navigate to the initial route.
         initializeRouter();
         router();
 
@@ -192,7 +194,7 @@ async function main() {
             hasUserInteracted = true;
         }, { once: true });
 
-        // 5. Pantau status otentikasi pengguna.
+        // 5. Monitor user authentication status.
         onAuthStateChanged(user => {
             const pendingBooking = sessionStorage.getItem('pendingBooking');
             if (user && pendingBooking) {
@@ -217,7 +219,7 @@ async function main() {
             }
         });
 
-        // 6. Ambil data publik setelah UI siap.
+        // 6. Fetch public data after the UI is ready.
         showLoader(true, 'Loading initial data...');
         const data = await fetchAllPublicData();
         publicDataCache.locations = data.locations;
@@ -232,5 +234,5 @@ async function main() {
     }
 }
 
-// Jalankan aplikasi
+// Run the application
 main();

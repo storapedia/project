@@ -2,7 +2,7 @@ exports.handler = async function(event, context) {
   return {
     statusCode: 200,
     body: JSON.stringify({
-      Maps_API_KEY: process.env.MAPS_API_KEY,
+      MAPS_API_KEY: process.env.MAPS_API_KEY,
       STORAPEDIA_API_KEY: process.env.STORAPEDIA_API_KEY,
       STORAPEDIA_AUTH_DOMAIN: process.env.STORAPEDIA_AUTH_DOMAIN,
       STORAPEDIA_PROJECT_ID: process.env.STORAPEDIA_PROJECT_ID,
