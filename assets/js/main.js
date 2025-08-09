@@ -21,13 +21,12 @@ export const publicDataCache = {
     easySteps: null
 };
 
-
+// --- Global State ---
 let userNotificationSound = new Audio('/assets/sounds/notification.wav');
 let lastUserNotificationCount = 0;
 let hasUserInteracted = false;
-let routerInitialized = false;
 
-// --- PWA Installation Logic for Android & iOS ---
+// --- PWA Installation Logic ---
 function setupInstallBanner() {
     let deferredPrompt;
     const installBanner = document.getElementById('install-banner');
@@ -50,15 +49,13 @@ function setupInstallBanner() {
         installText.innerHTML = "<strong>Install Storapedia</strong><span>Tap 'Share' then 'Add to Home Screen'</span>";
         installButton.classList.add('hidden');
         installBanner.classList.remove('hidden');
-
     } else if (isIOS && !isSafariOnIOS) {
         installText.innerHTML = "<strong>Install App</strong><span>To install, please open this page in Safari.</span>";
         installButton.classList.add('hidden');
         installBanner.classList.remove('hidden');
-
     } else {
-        // Hapus `event.preventDefault()` agar banner bawaan browser dapat muncul
         window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
             deferredPrompt = e;
             installBanner.classList.remove('hidden');
 
@@ -84,22 +81,42 @@ function setupInstallBanner() {
         deferredPrompt = null;
     });
 }
-// --- End of PWA Installation Logic ---
 
-// This function now needs to be called after firebase is initialized
-// to ensure the Maps API key is available.
+// --- Google Maps Loading Logic ---
+/**
+ * Memuat script Google Maps menggunakan API Key dari config global.
+ */
 function loadGoogleMapsScript() {
-    // We now retrieve the Maps API key from the config loader
-    const Maps_API_KEY = window.APP_CONFIG?.Maps_API_KEY;
-    if (!Maps_API_KEY || document.getElementById('google-maps-script')) return;
+    if (document.getElementById('google-maps-script')) return; 
+
+    // Ambil kunci API dari window.APP_CONFIG yang di-set oleh firebase-init.js
+    const MAPS_API_KEY = window.APP_CONFIG?.MAPS_API_KEY;
+    if (!MAPS_API_KEY) {
+        console.error("Maps API Key not found in window.APP_CONFIG. Maps feature will be disabled.");
+        return;
+    }
+
     const script = document.createElement('script');
     script.id = 'google-maps-script';
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${Maps_API_KEY}&libraries=places,geometry&callback=storamaps_initMap&loading=async`;
+    // Gunakan 'storamaps_initMap' sebagai nama callback global
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_API_KEY}&libraries=places,geometry&callback=storamaps_initMap`;
     script.async = true;
     script.defer = true;
     document.head.appendChild(script);
 }
 
+/**
+ * PERBAIKAN KUNCI: Fungsi callback ini harus ada di scope global.
+ * Google akan memanggil fungsi ini setelah script selesai dimuat.
+ */
+window.storamaps_initMap = function() {
+    console.log("✅ Google Maps API is loaded and ready.");
+    // Set sebuah "bendera" global untuk menandakan bahwa API sudah aman digunakan
+    window.isGoogleMapsReady = true; 
+};
+
+
+// --- Notification Logic ---
 function listenForUserNotifications(userId) {
     if (!userId) return;
     if (window.userNotificationListener) {
@@ -116,26 +133,27 @@ function listenForUserNotifications(userId) {
         });
         const currentUnreadCount = unreadNotifications.length;
         const badge = document.getElementById('notification-badge');
-        if (currentUnreadCount > 0) {
-            badge.textContent = currentUnreadCount;
-            badge.classList.remove('hidden');
-            if (currentUnreadCount > lastUserNotificationCount && hasUserInteracted) {
-                userNotificationSound.play().catch(e => console.warn("User notification sound failed to play:", e));
+        if (badge) {
+            if (currentUnreadCount > 0) {
+                badge.textContent = currentUnreadCount;
+                badge.classList.remove('hidden');
+                if (currentUnreadCount > lastUserNotificationCount && hasUserInteracted) {
+                    userNotificationSound.play().catch(e => console.warn("Notification sound failed:", e));
+                }
+            } else {
+                badge.classList.add('hidden');
             }
-        } else {
-            badge.classList.add('hidden');
         }
         lastUserNotificationCount = currentUnreadCount;
     }, (error) => {
-        console.error("Error listening for user notifications:", error);
+        console.error("Error listening to notifications:", error);
     });
 }
 
+// --- App Initialization ---
 function handleResize() {
-    // Deteksi apakah lebar layar lebih besar atau sama dengan 1024px
     const isDesktop = window.innerWidth >= 1024;
     renderAppShell(document.getElementById('app'), isDesktop);
-    // Panggil router untuk merender ulang halaman jika diperlukan
     router();
 }
 
@@ -143,23 +161,18 @@ async function main() {
     try {
         const appRoot = document.getElementById('app');
         
-        // Render awal berdasarkan device type saat halaman dimuat
-        const isDesktop = window.innerWidth >= 1024;
-        renderAppShell(appRoot, isDesktop);
-
-        // Tambahkan event listener untuk mendeteksi perubahan ukuran jendela
+        renderAppShell(appRoot, window.innerWidth >= 1024);
         window.addEventListener('resize', handleResize);
-
         setupInstallBanner();
-        
-        // Load the config first, and then initialize Firebase
-        // NOTE: The `fetchConfig` function is no longer needed here if we do this in `firebase-init.js`
-        // We will call `initializeFirebase()` which now handles fetching config.
+
+        // 1. Inisialisasi Firebase. Ini juga akan mengambil config dari Netlify
+        //    dan seharusnya menyimpan API Key di `window.APP_CONFIG`.
         await initializeFirebase();
         
-        // Now that Firebase is initialized, we can safely load the Maps script
+        // 2. Setelah Firebase siap dan config dimuat, panggil fungsi untuk memuat script Maps.
         loadGoogleMapsScript();
 
+        // 3. Daftarkan semua rute aplikasi.
         registerRoute('/', Home);
         registerRoute('/map', Map);
         registerRoute('/bookings', Bookings);
@@ -171,21 +184,22 @@ async function main() {
             render: async () => `<div class="page-header"><h2 class="page-title">Page Not Found</h2></div>`
         });
 
+        // 4. Inisialisasi router dan navigasi ke rute awal.
         initializeRouter();
         router();
-        routerInitialized = true;
 
         document.body.addEventListener('click', () => {
             hasUserInteracted = true;
         }, { once: true });
 
+        // 5. Pantau status otentikasi pengguna.
         onAuthStateChanged(user => {
             const pendingBooking = sessionStorage.getItem('pendingBooking');
             if (user && pendingBooking) {
                 sessionStorage.removeItem('pendingBooking');
                 const restoredState = JSON.parse(pendingBooking);
                 location.hash = '#/';
-                renderBookingFlowModal(restoredState.location, restoredState);
+                setTimeout(() => renderBookingFlowModal(restoredState), 100);
             } else {
                 const restrictedPaths = ['#/bookings', '#/profile', '#/inbox', '#/notifications'];
                 if (!user && restrictedPaths.includes(location.hash)) {
@@ -195,15 +209,15 @@ async function main() {
 
             if (user) {
                 listenForUserNotifications(user.uid);
-            } else {
-                if (window.userNotificationListener) {
-                    window.userNotificationListener.off();
-                    document.getElementById('notification-badge').classList.add('hidden');
-                    lastUserNotificationCount = 0;
-                }
+            } else if (window.userNotificationListener) {
+                window.userNotificationListener.off();
+                const badge = document.getElementById('notification-badge');
+                if (badge) badge.classList.add('hidden');
+                lastUserNotificationCount = 0;
             }
         });
 
+        // 6. Ambil data publik setelah UI siap.
         showLoader(true, 'Loading initial data...');
         const data = await fetchAllPublicData();
         publicDataCache.locations = data.locations;
@@ -211,6 +225,7 @@ async function main() {
         publicDataCache.vouchers = data.vouchers;
         publicDataCache.easySteps = data.easySteps;
         showLoader(false);
+
     } catch (error) {
         console.error("Application failed to start:", error);
         showLoader(false);
