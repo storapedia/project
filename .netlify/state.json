@@ -1,0 +1,15 @@
+{
+	"siteId": "0e62020a-ace9-45e9-aed8-0d117b1278c9",
+	"geolocation": {
+		"data": {
+			"country": {
+				"code": "ID",
+				"name": "Indonesia"
+			},
+			"timezone": "Asia/Jakarta",
+			"latitude": -6.175,
+			"longitude": 106.8286
+		},
+		"timestamp": 1754715682802
+	}
+}

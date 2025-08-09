@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Storapedia Courier App</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="apple-touch-icon" href="/assets/img/icon.png">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/png" href="/assets/img/icon.png">
+
+    <style>
+        :root {
+            --primary-color: #4C7CFF;
+            --secondary-color: #6B7280;
+            --background-color: #F8F9FA;
+            --card-background: #ffffff;
+            --success-color: #10B981;
+            --warning-color: #FFC107;
+            --danger-color: #EF4444;
+            --text-primary: #212529;
+            --text-secondary: #6c757d;
+        }
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-primary);
+        }
+        .container {
+            display: none;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        .login-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: var(--background-color);
+            padding: 1rem;
+        }
+        .login-box {
+            background-color: #fff;
+            padding: 2.5rem;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+        .login-box h2 {
+            font-size: 2rem;
+            margin-bottom: 2rem;
+            color: var(--primary-color);
+            font-weight: 600;
+        }
+        .login-box form {
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
+        .login-box label {
+            text-align: left;
+            font-weight: 500;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        .login-box input {
+            width: 100%;
+            padding: 1rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+        .login-box input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+        .login-box button {
+            background-color: var(--primary-color);
+            color: #fff;
+            padding: 1rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            margin-top: 1rem;
+            transition: background-color 0.3s, transform 0.1s;
+        }
+        .login-box button:hover { background-color: #3b68d4; }
+        .login-box button:active { transform: scale(0.99); }
+        .courier-header {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        .courier-header img {
+            height: 40px;
+            filter: brightness(0) invert(1);
+            margin-bottom: 1rem;
+        }
+        .courier-title {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        .courier-profile {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .courier-profile span {
+            font-weight: 500;
+            font-size: 1rem;
+        }
+        .courier-profile button {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 1.25em;
+            transition: color 0.3s;
+        }
+        .courier-profile button:hover { color: #d4e0ff; }
+        .courier-main {
+            display: flex;
+            flex: 1;
+            flex-direction: column;
+            gap: 1.5rem;
+            padding: 1.5rem;
+        }
+        .map-container {
+            height: 300px;
+            background-color: #e2e8f0;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+        #map { width: 100%; height: 100%; }
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background-color: #fff;
+            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.08);
+            display: flex;
+            justify-content: space-around;
+            padding: 0.5rem 0;
+            z-index: 1000;
+        }
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            padding: 0.5rem 0;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+        .nav-item i {
+            font-size: 1.5rem;
+            margin-bottom: 0.25rem;
+        }
+        .nav-item.active {
+            color: var(--primary-color);
+        }
+        .content-section { display: none; padding-bottom: 5rem; }
+        .content-section.active { display: block; }
+        .request-list, .profile-content, .scan-content { padding: 1rem; }
+        .request-card {
+            background-color: var(--card-background);
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            transition: transform 0.2s, box-shadow 0.2s;
+            border-left: 5px solid;
+            margin-bottom: 1rem;
+        }
+        .request-card.pending { border-left-color: var(--warning-color); }
+        .request-card.processing { border-left-color: var(--primary-color); }
+        .request-card.completed { border-left-color: var(--success-color); }
+        .request-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+        }
+        .request-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .request-card-header h3 { font-size: 1.1rem; font-weight: 600; margin: 0; color: var(--text-primary); }
+        .status {
+            font-weight: 600;
+            text-transform: capitalize;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            color: white;
+            font-size: 0.8rem;
+        }
+        .status.pending { background-color: var(--warning-color); }
+        .status.processing { background-color: var(--primary-color); }
+        .status.completed { background-color: var(--success-color); }
+        .request-details {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+        .request-details p { margin: 0; }
+        .request-details strong { color: var(--text-primary); font-weight: 500; }
+        .request-actions {
+            margin-top: 1.5rem;
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 0.75rem 1.25rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background-color 0.3s, transform 0.1s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .btn:active { transform: scale(0.98); }
+        .btn-primary { background-color: var(--primary-color); color: white; }
+        .btn-primary:hover { background-color: #3b68d4; }
+        .btn-success { background-color: var(--success-color); color: white; }
+        .btn-success:hover { background-color: #0d8c6b; }
+        .btn-secondary { background-color: #E9ECEF; color: var(--text-primary); }
+        .btn-secondary:hover { background-color: #dee2e6; }
+        .empty-state {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 1rem;
+            padding: 3rem 1.5rem;
+            background-color: var(--card-background);
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+        .payment-status-pending { color: var(--danger-color); font-weight: bold; }
+        .profile-content {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        .profile-content h3 { font-size: 1.5rem; font-weight: 600; margin-bottom: 1rem; }
+        .profile-info-card { background: #fff; padding: 1.5rem; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        .profile-info-card p { margin: 0.5rem 0; font-size: 1rem; }
+        .profile-info-card strong { color: var(--text-primary); }
+        .profile-info-card .btn { margin-top: 1rem; }
+        #qr-video { width: 100%; height: auto; border-radius: 8px; }
+        #chat-window {
+            height: 300px;
+            background-color: var(--card-background);
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            margin-top: 1rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            padding: 1rem;
+        }
+        .chat-message {
+            margin-bottom: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 12px;
+            max-width: 80%;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+        .chat-message.sent { background-color: var(--primary-color); color: white; align-self: flex-end; }
+        .chat-message.received { background-color: #e9ecef; color: var(--text-primary); align-self: flex-start; }
+        #chat-form { display: flex; margin-top: 1rem; gap: 0.5rem; }
+        #chat-input { flex: 1; padding: 0.75rem; border: 1px solid #e0e0e0; border-radius: 8px; }
+        #chat-form button { background-color: var(--primary-color); color: white; border: none; border-radius: 8px; padding: 0.75rem 1rem; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div id="login-screen" class="login-container">
+        <div class="login-box">
+            <img src="/assets/img/storapedia.png" alt="Storapedia Logo" style="width: 150px; margin-bottom: 1rem;">
+            <h2>Courier Login</h2>
+            <form id="login-form">
+                <label for="login-email">Email:</label>
+                <input type="email" id="login-email" required>
+                <label for="login-password">Password:</label>
+                <input type="password" id="login-password" required>
+                <button type="submit">Login</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="main-app" class="container">
+        <header class="courier-header">
+            <img src="/assets/img/storapedia.png" alt="Logo" style="height: 40px; filter: brightness(0) invert(1);">
+            <div class="courier-profile" style="margin-top: 1rem;">
+                <span id="courier-name">Loading...</span>
+                <button id="logout-btn">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+            </div>
+        </header>
+
+        <main class="courier-main">
+            <div id="main-content">
+                </div>
+        </main>
+
+        <nav class="bottom-nav">
+            <div class="nav-item active" data-target="pickup-list">
+                <i class="fas fa-truck-loading"></i>
+                <span>Need Pickup</span>
+            </div>
+            <div class="nav-item" data-target="picked-up-list">
+                <i class="fas fa-box-open"></i>
+                <span>Picked Up</span>
+            </div>
+            <div class="nav-item" data-target="scan">
+                <i class="fas fa-qrcode"></i>
+                <span>Scan</span>
+            </div>
+            <div class="nav-item" data-target="profile">
+                <i class="fas fa-user-circle"></i>
+                <span>Profile</span>
+            </div>
+        </nav>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyADCv-AX09lIYq6Gr7Gm56rChp4kS0J08Q&callback=initMap"></script>
+    <script src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"></script>
+    
+    <script>
+const firebaseConfig = {
+  apiKey: "AIzaSyBeX6K3ejM-zu755LVDDMwgxBi-KW-ogx4",
+  authDomain: "storapedia.firebaseapp.com",
+  databaseURL: "https://storapedia-default-rtdb.firebaseio.com",
+  projectId: "storapedia",
+  storageBucket: "storapedia.firebasestorage.app",
+  messagingSenderId: "145464021088",
+  appId: "1:145464021088:web:1e24a2847994ac5003f305"
+};
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.database();
+        const auth = firebase.auth();
+        const courierNameEl = document.getElementById('courier-name');
+        const loginForm = document.getElementById('login-form');
+        const loginScreen = document.getElementById('login-screen');
+        const mainApp = document.getElementById('main-app');
+        const logoutBtn = document.getElementById('logout-btn');
+        const mainContent = document.getElementById('main-content');
+        const navItems = document.querySelectorAll('.bottom-nav .nav-item');
+        let currentCourierData = null;
+        let map;
+        let mapMarkers = [];
+        let locationWatcherId;
+        const notificationSound = new Audio('/assets/sounds/notification.wav');
+
+        window.initMap = function() {
+            const mapElement = document.getElementById('map-view');
+            if (mapElement) {
+                const defaultCenter = { lat: -8.409518, lng: 115.188919 };
+                map = new google.maps.Map(mapElement, {
+                    zoom: 10,
+                    center: defaultCenter,
+                });
+            }
+        }
+        
+        async function fetchCourierData(courierEmail) {
+            const snapshot = await db.ref('couriers').orderByChild('email').equalTo(courierEmail).once('value');
+            if (snapshot.exists()) {
+                const courierData = snapshot.val();
+                const courierId = Object.keys(courierData)[0];
+                return { id: courierId, ...courierData[courierId] };
+            }
+            return null;
+        }
+        
+        function renderEmptyState() {
+            const listContainer = document.querySelector('#main-content .request-list');
+            if (listContainer) {
+                listContainer.innerHTML = `<p class="empty-state">No tasks available in this category.</p>`;
+            }
+        }
+
+        async function fetchBookingsForCourier(viewType) {
+            if (!currentCourierData || !currentCourierData.assignedLocationId) {
+                renderEmptyState();
+                return;
+            }
+            
+            const assignedLocationId = currentCourierData.assignedLocationId;
+            db.ref('bookings').on('value', snapshot => {
+                const bookings = [];
+                snapshot.forEach(childSnapshot => {
+                    const booking = { id: childSnapshot.key, ...childSnapshot.val() };
+                    const isPickupService = booking.serviceType === 'pickup';
+                    const isAssignedToThisCourier = booking.courierId === currentCourierData.id;
+                    const isUnassignedButAtLocation = !booking.courierId && booking.locationId === assignedLocationId;
+                    
+                    if (viewType === 'pickup-list') {
+                        if (isPickupService && (booking.bookingStatus === 'active' || booking.bookingStatus === 'processing_by_courier') && (isAssignedToThisCourier || isUnassignedButAtLocation)) {
+                            bookings.push(booking);
+                        }
+                    } else if (viewType === 'picked-up-list') {
+                        if (isPickupService && booking.bookingStatus === 'checked_in' && isAssignedToThisCourier) {
+                            bookings.push(booking);
+                        }
+                    }
+                });
+                renderRequests(bookings, viewType);
+                updateMapMarkers(bookings);
+            });
+        }
+
+        function updateMapMarkers(bookings) {
+            if (map) {
+                mapMarkers.forEach(marker => marker.setMap(null));
+                mapMarkers = [];
+                const bounds = new google.maps.LatLngBounds();
+
+                bookings.forEach(booking => {
+                    if (booking.geolocation) {
+                        const position = { lat: booking.geolocation.latitude, lng: booking.geolocation.longitude };
+                        const marker = new google.maps.Marker({
+                            position: position,
+                            map: map,
+                            title: `Booking ID: ${booking.id}`,
+                            animation: google.maps.Animation.DROP
+                        });
+                        mapMarkers.push(marker);
+                        bounds.extend(position);
+                    }
+                });
+                if (!bounds.isEmpty()) {
+                    map.fitBounds(bounds);
+                }
+            }
+        }
+        
+        function renderRequests(requests, viewType) {
+            const listContent = requests.map(request => {
+                const bookingStatus = request.bookingStatus ? request.bookingStatus.replace(/_/g, ' ') : 'pending';
+                let cardClass = '';
+                let statusBadgeClass = '';
+                let buttonHtml = '';
+                const isAssigned = request.courierId === currentCourierData.id;
+
+                if (viewType === 'pickup-list') {
+                    if (request.courierId) {
+                        cardClass = 'processing';
+                        statusBadgeClass = 'processing';
+                        buttonHtml = `<button class="btn btn-primary" data-action="complete-pickup" data-id="${request.id}"><i class="fas fa-check-circle"></i> Mark as Picked Up</button>`;
+                    } else {
+                        cardClass = 'pending';
+                        statusBadgeClass = 'pending';
+                        buttonHtml = `<button class="btn btn-primary" data-action="claim-pickup" data-id="${request.id}"><i class="fas fa-truck"></i> Claim Pickup</button>`;
+                    }
+                } else if (viewType === 'picked-up-list') {
+                    cardClass = 'completed';
+                    statusBadgeClass = 'completed';
+                    buttonHtml = `<button class="btn btn-success" disabled><i class="fas fa-check"></i> Completed</button>`;
+                }
+                
+                const directionsUrl = request.pickupAddress ? 
+                    `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(request.pickupAddress)}` : '#';
+
+                return `
+                    <div class="request-card ${cardClass}" data-id="${request.id}">
+                        <div class="request-card-header">
+                            <h3>Booking ID: ${request.id}</h3>
+                            <span class="status ${statusBadgeClass}">${bookingStatus}</span>
+                        </div>
+                        <div class="request-details">
+                            <p><strong>Location:</strong> ${request.locationName || 'N/A'}</p>
+                            <p><strong>Storage Type:</strong> ${request.storageType || 'N/A'}</p>
+                            <p><strong>Pickup Address:</strong> ${request.pickupAddress || 'N/A'}</p>
+                            <p><strong>Pickup Time:</strong> ${request.pickupTime || 'N/A'}</p>
+                            <p><strong>Payment Status:</strong> <span class="${request.paymentStatus !== 'paid' ? 'payment-status-pending' : ''}">${request.paymentStatus || 'N/A'}</span></p>
+                            <p><strong>Assigned Courier:</strong> ${request.courierName || 'Unassigned'}</p>
+                        </div>
+                        <div class="request-actions">
+                            ${buttonHtml}
+                            <a href="${directionsUrl}" target="_blank" class="btn btn-secondary">
+                                <i class="fas fa-directions"></i> Get Directions
+                            </a>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            const listContainer = document.querySelector('#main-content .request-list');
+            if (listContainer) {
+                listContainer.innerHTML = listContent || `<p class="empty-state">No tasks available in this category.</p>`;
+                listContainer.querySelectorAll('.btn[data-action]').forEach(button => {
+                    button.addEventListener('click', async (e) => {
+                        const bookingId = e.target.closest('.btn').dataset.id;
+                        const action = e.target.closest('.btn').dataset.action;
+                        if (action === 'claim-pickup') {
+                            await handlePickup(bookingId);
+                        } else if (action === 'complete-pickup') {
+                            await handlePickupComplete(bookingId);
+                        }
+                    });
+                });
+            }
+        }
+        
+        async function handlePickup(bookingId) {
+            Swal.fire({
+                title: 'Claim This Pickup?',
+                text: "Are you sure you want to claim this pickup task?",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#4C7CFF',
+                cancelButtonColor: '#6B7280',
+                confirmButtonText: 'Yes, Claim it'
+            }).then(async (result) => {
+                if (result.isConfirmed) {
+                    try {
+                        await db.ref(`bookings/${bookingId}`).update({
+                            bookingStatus: 'processing_by_courier',
+                            courierId: currentCourierData.id,
+                            courierName: currentCourierData.name
+                        });
+                        Swal.fire('Claimed!', 'This task is now assigned to you.', 'success');
+                    } catch (error) {
+                        console.error("Failed to claim pickup:", error);
+                        Swal.fire('Error', 'Failed to claim pickup. Please try again.', 'error');
+                    }
+                }
+            });
+        }
+
+        async function handlePickupComplete(bookingId) {
+            Swal.fire({
+                title: 'Confirm Pickup Complete?',
+                text: "Are you sure you want to mark this booking as 'checked_in'?",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#4C7CFF',
+                cancelButtonColor: '#6B7280',
+                confirmButtonText: 'Yes, Complete Pickup'
+            }).then(async (result) => {
+                if (result.isConfirmed) {
+                    try {
+                        await db.ref(`bookings/${bookingId}`).update({
+                            bookingStatus: 'checked_in',
+                            checkInTime: firebase.database.ServerValue.TIMESTAMP
+                        });
+                        Swal.fire('Success!', 'Pickup successfully marked as complete.', 'success');
+                    } catch (error) {
+                        console.error("Failed to complete pickup:", error);
+                        Swal.fire('Error!', 'Failed to complete pickup. Please try again.', 'error');
+                    }
+                }
+            });
+        }
+        
+        function showTasksContent(viewType) {
+            mainContent.innerHTML = `
+                <div id="tasks-view" class="content-section active">
+                    <div class="map-container" style="margin-bottom: 1.5rem;">
+                        <div id="map-view" style="width: 100%; height: 100%;"></div>
+                    </div>
+                    <section class="request-section">
+                        <h2>${viewType === 'pickup-list' ? 'Pickup Requests' : 'Completed Pickups'}</h2>
+                        <div id="request-list" class="request-list">
+                            <p class="empty-state">Loading tasks...</p>
+                        </div>
+                    </section>
+                </div>
+            `;
+            const mapScript = document.createElement('script');
+            mapScript.src = `https://maps.googleapis.com/maps/api/js?key=YOUR_Maps_API_KEY&callback=initMap`;
+            document.head.appendChild(mapScript);
+            fetchBookingsForCourier(viewType);
+        }
+        
+        function showScanContent() {
+            mainContent.innerHTML = `
+                <div id="scan-view" class="content-section active">
+                    <section class="scan-section">
+                        <h2>Scan QR Code</h2>
+                        <div id="qr-scanner-container" style="position: relative; text-align: center;">
+                            <video id="qr-video" muted autoplay playsinline style="width: 100%; max-width: 400px;"></video>
+                            <div class="request-actions" style="margin-top: 1rem;">
+                                <button class="btn btn-primary" id="start-scan-btn"><i class="fas fa-qrcode"></i> Start Scan</button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            `;
+            initScannerLogic();
+        }
+
+        function showProfileContent() {
+            mainContent.innerHTML = `
+                <div id="profile-view" class="content-section active">
+                    <section class="profile-content">
+                        <h2>Profile</h2>
+                        <div class="profile-info-card">
+                            <p><strong>Name:</strong> ${currentCourierData.name || 'N/A'}</p>
+                            <p><strong>Email:</strong> ${auth.currentUser.email || 'N/A'}</p>
+                            <p><strong>Phone:</strong> ${currentCourierData.phone || 'N/A'}</p>
+                            <p><strong>Assigned Location:</strong> ${currentCourierData.assignedLocationId || 'N/A'}</p>
+                        </div>
+                    </section>
+                </div>
+            `;
+        }
+
+        function initChatLogic() {
+            mainContent.innerHTML = `
+                <div id="chat-view" class="content-section active">
+                    <section class="chat-content">
+                        <h2>Chat with Admin</h2>
+                        <div id="chat-window"></div>
+                        <form id="chat-form">
+                            <input type="text" id="chat-input" placeholder="Type a message...">
+                            <button type="submit"><i class="fas fa-paper-plane"></i></button>
+                        </form>
+                    </section>
+                </div>
+            `;
+
+            const chatWindow = document.getElementById('chat-window');
+            const chatForm = document.getElementById('chat-form');
+            const chatInput = document.getElementById('chat-input');
+            const chatId = auth.currentUser.uid;
+
+            db.ref(`chats/${chatId}/messages`).on('value', snapshot => {
+                chatWindow.innerHTML = '';
+                snapshot.forEach(child => {
+                    const message = child.val();
+                    const messageElement = document.createElement('div');
+                    messageElement.classList.add('chat-message', message.sender === 'courier' ? 'sent' : 'received');
+                    messageElement.textContent = message.text;
+                    chatWindow.appendChild(messageElement);
+                });
+                chatWindow.scrollTop = chatWindow.scrollHeight;
+            });
+
+            chatForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const text = chatInput.value.trim();
+                if (text) {
+                    const newMessageRef = db.ref(`chats/${chatId}/messages`).push();
+                    newMessageRef.set({
+                        sender: 'courier',
+                        text: text,
+                        timestamp: firebase.database.ServerValue.TIMESTAMP
+                    });
+                    db.ref(`chats/${chatId}`).update({
+                        lastMessage: {
+                            text: text,
+                            timestamp: firebase.database.ServerValue.TIMESTAMP,
+                            read: false
+                        }
+                    });
+                    chatInput.value = '';
+                }
+            });
+        }
+
+        // Real-time Location Tracking
+        function startLocationTracking() {
+            if (navigator.geolocation) {
+                locationWatcherId = navigator.geolocation.watchPosition(position => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    db.ref(`courierLocations/${auth.currentUser.uid}`).set({
+                        lat: lat,
+                        lng: lng,
+                        timestamp: firebase.database.ServerValue.TIMESTAMP
+                    }).catch(error => console.error("Location update failed:", error));
+                }, error => {
+                    console.error("Geolocation error:", error);
+                }, {
+                    enableHighAccuracy: true,
+                    maximumAge: 5000,
+                    timeout: 10000
+                });
+            } else {
+                console.error("Geolocation is not supported by this browser.");
+            }
+        }
+        
+        function stopLocationTracking() {
+            if (locationWatcherId) {
+                navigator.geolocation.clearWatch(locationWatcherId);
+                locationWatcherId = null;
+            }
+        }
+
+        function initScannerLogic() {
+            const qrVideo = document.getElementById('qr-video');
+            const startScanBtn = document.getElementById('start-scan-btn');
+            let stream = null;
+            let scanning = false;
+            
+            startScanBtn.addEventListener('click', () => {
+                if (scanning) {
+                    stopScanner();
+                } else {
+                    startScanner();
+                }
+            });
+
+            async function startScanner() {
+                if (scanning) return;
+                scanning = true;
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                    qrVideo.srcObject = stream;
+                    qrVideo.style.display = 'block';
+                    startScanBtn.textContent = 'Stop Scan';
+                    startScanBtn.classList.remove('btn-primary');
+                    startScanBtn.classList.add('btn-secondary');
+                    scanQrCode();
+                } catch (err) {
+                    console.error("Camera access denied:", err);
+                    Swal.fire('Error', 'Camera access is required to scan QR codes.', 'error');
+                }
+            }
+
+            function stopScanner() {
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                }
+                qrVideo.style.display = 'none';
+                startScanBtn.textContent = 'Start Scan';
+                startScanBtn.classList.remove('btn-secondary');
+                startScanBtn.classList.add('btn-primary');
+                scanning = false;
+            }
+
+            function scanQrCode() {
+                if (!scanning) return;
+                const canvas = document.createElement('canvas');
+                canvas.width = qrVideo.videoWidth;
+                canvas.height = qrVideo.videoHeight;
+                const context = canvas.getContext('2d');
+                context.drawImage(qrVideo, 0, 0, canvas.width, canvas.height);
+                const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+                if (code) {
+                    stopScanner();
+                    Swal.fire({
+                        title: 'QR Code Scanned!',
+                        text: `Found a booking ID: ${code.data}. Do you want to view the details?`,
+                        icon: 'success',
+                        showCancelButton: true,
+                        confirmButtonText: 'Yes, view details'
+                    }).then(result => {
+                        if (result.isConfirmed) {
+                            fetchBookingDetails(code.data);
+                        }
+                    });
+                } else {
+                    requestAnimationFrame(scanQrCode);
+                }
+            }
+            
+            async function fetchBookingDetails(bookingId) {
+                const snapshot = await db.ref(`bookings/${bookingId}`).once('value');
+                const booking = snapshot.val();
+                if (booking) {
+                    renderRequests([booking]);
+                } else {
+                    Swal.fire('Error', 'Booking not found.', 'error');
+                }
+            }
+        }
+        
+        // Initial App State & Auth
+        auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                loginScreen.style.display = 'none';
+                mainApp.style.display = 'flex';
+                currentCourierData = await fetchCourierData(user.email);
+                if (currentCourierData) {
+                    courierNameEl.textContent = currentCourierData.name;
+                    showTasksContent('pickup-list');
+                    startLocationTracking();
+                } else {
+                    Swal.fire('Login Error', 'Your account is not registered as a courier. Logging out.', 'error');
+                    auth.signOut();
+                }
+            } else {
+                loginScreen.style.display = 'flex';
+                mainApp.style.display = 'none';
+                stopLocationTracking();
+            }
+        });
+
+        if (loginForm) {
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const email = loginForm['login-email'].value;
+                const password = loginForm['login-password'].value;
+                try {
+                    await auth.signInWithEmailAndPassword(email, password);
+                } catch (error) {
+                    Swal.fire('Login Failed', error.message, 'error');
+                }
+            });
+        }
+        
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', async () => {
+                try {
+                    await auth.signOut();
+                } catch (error) {
+                    console.error("Logout Error:", error);
+                }
+            });
+        }
+
+        navItems.forEach(item => {
+            item.addEventListener('click', () => {
+                navItems.forEach(nav => nav.classList.remove('active'));
+                item.classList.add('active');
+                const target = item.dataset.target;
+                if (target === 'scan') {
+                    showScanContent();
+                } else if (target === 'profile') {
+                    showProfileContent();
+                } else if (target === 'chat') {
+                    showChatContent();
+                } else {
+                    showTasksContent(target);
+                }
+            });
+        });
+        
+    </script>
+</body>
+</html>
