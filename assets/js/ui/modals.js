@@ -107,44 +107,44 @@ async function calculateBookingTotals() {
     return { subTotal, pickupFee, discountAmount, finalPrice, totalItems };
 }
 
-// --- BARU: Fungsi untuk Konversi Mata Uang ---
+// --- NEW: Currency Conversion Function ---
 async function convertCurrencyAndUpdateUI(totalUSD) {
     const idrPriceElement = document.getElementById('total-price-summary-idr');
     const statusElement = document.getElementById('currency-conversion-status');
 
     if (!idrPriceElement || !statusElement) return;
 
-    // GANTI DENGAN API KEY ANDA DARI EXCHANGERATE-API.COM
-    const apiKey = 'cdb0e64314935946403b2da4'; 
-
-    if (apiKey === 'cdb0e64314935946403b2da4') {
-        statusElement.textContent = 'Exchange Rate API Key is missing.';
-        return;
-    }
-
-    statusElement.textContent = 'Converting USD to IDR...';
+    // Immediately show loading state
+    statusElement.innerHTML = `<div class="mini-loader"></div> Converting USD to IDR...`;
     idrPriceElement.textContent = '';
 
     try {
-        const response = await fetch(`https://v6.exchangerate-api.com/v6/${apiKey}/latest/USD`);
+        const response = await fetch('/assets/js/exchange');
         if (!response.ok) {
             throw new Error('Network response was not ok');
         }
         const data = await response.json();
-        const exchangeRate = data.conversion_rates.IDR;
-        const totalIDR = totalUSD * exchangeRate;
+        
+        // Find the USD exchange rate from the BCA data
+        const usdRate = data.find(item => item.mata_uang === 'USD');
+        if (!usdRate || !usdRate.eRate || !usdRate.eRate.eRate_jual) {
+            throw new Error('USD exchange rate not found in BCA data.');
+        }
 
+        const exchangeRate = parseFloat(usdRate.eRate.eRate_jual.replace('.', '').replace(',', '.'));
+        const totalIDR = totalUSD * exchangeRate;
+        const lastUpdated = data[0]?.last_updated || 'Unknown date';
+
+        // Update UI with the result
         idrPriceElement.textContent = `Approx. Rp ${totalIDR.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-        statusElement.textContent = `Using rate: 1 USD = Rp ${exchangeRate.toLocaleString('id-ID')}`;
+        statusElement.textContent = `Using BCA e-Rate: 1 USD = Rp ${exchangeRate.toLocaleString('id-ID')} (${lastUpdated})`;
 
     } catch (error) {
         console.error('Currency conversion failed:', error);
-        statusElement.textContent = 'Could not fetch exchange rate.';
+        statusElement.textContent = 'Could not fetch exchange rate from BCA.';
+        idrPriceElement.textContent = ''; // Clear price on error
     }
 }
-
-
-// ... (Sisa kode tetap sama, hanya bagian service step yang diubah)
 
 // --- GET SERVICE STEP HTML (MODIFIED) ---
 function getServiceStepHTML() {
@@ -181,15 +181,21 @@ function addServiceStepLogic() {
     const summaryList = document.getElementById('sp-editable-summary-list');
 
     const validateAndRefresh = async () => {
+        // Show loading state for currency conversion immediately
+        const statusElement = document.getElementById('currency-conversion-status');
+        if (statusElement) {
+            statusElement.innerHTML = `<div class="mini-loader"></div> Preparing summary...`;
+        }
+        
+        // Update the USD summary first
         await updateBookingSummary();
         
-        // BARU: Panggil fungsi konversi mata uang setelah summary diperbarui
+        // Then, trigger the currency conversion
         if (bookingState.totalPrice > 0) {
             convertCurrencyAndUpdateUI(bookingState.totalPrice);
         } else {
-            // Bersihkan jika harga nol
+            // Clear currency fields if total is zero
             const idrPriceElement = document.getElementById('total-price-summary-idr');
-            const statusElement = document.getElementById('currency-conversion-status');
             if(idrPriceElement) idrPriceElement.textContent = '';
             if(statusElement) statusElement.textContent = '';
         }
@@ -225,13 +231,12 @@ function addServiceStepLogic() {
         }
     });
     
+    // Initial call to load summary and start conversion
     validateAndRefresh();
 }
 
 
-// ... [KODE LAINNYA DI BAWAH INI TETAP SAMA SEPERTI SEBELUMNYA] ...
-// Salin dan tempel sisa kode dari file modals.js Anda yang sebelumnya di sini.
-// Untuk kelengkapan, saya sertakan sisa kodenya.
+// ... [SISA KODE DI BAWAH INI SAMA, TIDAK PERLU DIUBAH] ...
 
 function renderSchedules(schedules) {
   if (!schedules) return '<p>Opening hours not available.</p>';
