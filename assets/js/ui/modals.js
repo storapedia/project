@@ -228,6 +228,7 @@ function addCategoryDetailListeners(category, locationData) {
       }
     } else if (decreaseBtn) {
       const sizeName = decreaseBtn.dataset.sizeName;
+      const size = category.sizes.find(s => s.name === sizeName);
       const display = modal.querySelector(`.quantity-display[data-size-name="${sizeName}"]`);
       let currentQty = quantitiesInPopup[sizeName] || 0;
       if (currentQty > 0) {
@@ -386,12 +387,16 @@ async function updateBookingSummary() {
     if (priceSummary) priceSummary.textContent = `Total: $${totals.finalPrice.toFixed(2)}`;
 
     if (serviceDetails) {
-        if (bookingState.serviceType === 'pickup') {
+        if (bookingState.serviceType === 'pickup' && bookingState.pickupAddress) {
             serviceDetails.innerHTML = `
                 <p class="no-margin">Pickup Service selected.</p>
+                <p class="no-margin">Pickup Address: ${bookingState.pickupAddress}</p>
                 <p class="no-margin">Distance: ${(bookingState.pickupDistance || 0).toFixed(2)} km</p>
                 <p class="no-margin">Pickup Fee: $${(bookingState.pickupFee || 0).toFixed(2)}</p>
             `;
+            serviceDetails.style.display = 'block';
+        } else if (bookingState.serviceType === 'pickup') {
+            serviceDetails.innerHTML = `<p class="no-margin">Pickup Service selected. Please add your pickup details.</p>`;
             serviceDetails.style.display = 'block';
         } else {
             serviceDetails.style.display = 'none';
@@ -405,6 +410,8 @@ function getDurationStepHTML() {
   const sharedRates = firstItem.size.rates;
   const startDate = new Date(bookingState.startDate);
   
+  const isDaily = bookingState.duration && bookingState.duration.toLowerCase() === 'daily';
+
   return `
     <div class="sp-bookings-flow-header">
       <h3 class="modal-title">1. Select Duration & Date</h3>
@@ -433,7 +440,10 @@ function getDurationStepHTML() {
         <div class="sp-readonly-field">
             <p class="no-margin" id="end-date-display">
                 <span class="font-semibold">Ends on:</span> 
-                <span class="text-primary-500 font-bold">${formatDateTime(bookingState.endDate)}</span>
+                ${isDaily 
+                  ? `<input type="date" id="end-date" class="sp-input-field" value="${new Date(bookingState.endDate).toISOString().split('T')[0]}">` 
+                  : `<span class="text-primary-500 font-bold">${formatDateTime(bookingState.endDate)}</span>`
+                }
             </p>
         </div>
       </div>
@@ -625,23 +635,26 @@ function addDurationStepLogic() {
     const priceSummary = document.getElementById('booking-price-summary');
 
     const updateAndValidate = async () => {
+        const endDateInput = document.getElementById('end-date');
         bookingState.startDate = new Date(`${startDateInput.value}T${startTimeInput.value}`).getTime();
-        let newEndDate = new Date(bookingState.startDate);
-        if (bookingState.duration) {
-            const durationType = bookingState.duration.toLowerCase();
+        
+        if (bookingState.duration?.toLowerCase() === 'daily' && endDateInput) {
+            bookingState.endDate = new Date(`${endDateInput.value}T${startTimeInput.value}`).getTime();
+        } else {
+            let newEndDate = new Date(bookingState.startDate);
+            const durationType = bookingState.duration?.toLowerCase();
             switch (durationType) {
                 case 'weekly': newEndDate.setDate(newEndDate.getDate() + 7); break;
                 case 'monthly': newEndDate.setMonth(newEndDate.getMonth() + 1); break;
-                case 'daily': newEndDate.setDate(newEndDate.getDate() + 1); break;
                 default:
                     const days = parseInt(durationType);
                     if (!isNaN(days)) newEndDate.setDate(newEndDate.getDate() + days);
                     break;
             }
+            bookingState.endDate = newEndDate.getTime();
+            if (endDateDisplay) endDateDisplay.querySelector('span:last-child').textContent = formatDateTime(bookingState.endDate);
         }
-        bookingState.endDate = newEndDate.getTime();
-        endDateDisplay.querySelector('span:last-child').textContent = formatDateTime(bookingState.endDate);
-        
+
         const totals = await calculateBookingTotals();
         priceSummary.textContent = `Total: $${totals.finalPrice.toFixed(2)}`;
 
@@ -653,13 +666,16 @@ function addDurationStepLogic() {
     };
 
     [startDateInput, startTimeInput].forEach(input => input.addEventListener('change', updateAndValidate));
+    const endDateInput = document.getElementById('end-date');
+    if (endDateInput) endDateInput.addEventListener('change', updateAndValidate);
 
     document.querySelectorAll('.sp-duration-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.sp-duration-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             bookingState.duration = btn.dataset.duration;
-            updateAndValidate();
+            
+            renderBookingStep(); 
         });
     });
 
