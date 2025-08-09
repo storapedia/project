@@ -84,22 +84,18 @@ function setupInstallBanner() {
 
 // --- Google Maps Loading Logic (Corrected) ---
 /**
- * Loads the Google Maps script using the API Key from the global config.
+ * Loads the Google Maps script using a hardcoded API Key.
  */
 function loadGoogleMapsScript() {
     if (document.getElementById('google-maps-script')) return;
 
-    // Get API key from window.APP_CONFIG set by firebase-init.js
-    const MAPS_API_KEY = window.APP_CONFIG?.MAPS_API_KEY;
-    if (!MAPS_API_KEY) {
-        console.error("Maps API Key not found in window.APP_CONFIG. Maps feature will be disabled.");
-        return;
-    }
+    // PERBAIKAN: Kunci API dimasukkan langsung ke sini.
+    const MAPS_API_KEY = "AIzaSyADCv-AX09lIYq6Gr7Gm56rChp4kS0J08Q";
 
     const script = document.createElement('script');
     script.id = 'google-maps-script';
     
-    // PERBAIKAN KUNCI: Membuat URL dengan benar menggunakan variabel MAPS_API_KEY.
+    // Construct the URL with the hardcoded API key.
     script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_API_KEY}&libraries=places,geometry&callback=storamaps_initMap`;
     
     script.async = true;
@@ -108,12 +104,12 @@ function loadGoogleMapsScript() {
 }
 
 /**
- * KEY FIX: This callback function must be in the global scope.
- * Google will call this function after the script has finished loading.
+ * This callback function must be in the global scope.
+ * Google calls this function after the script has finished loading.
  */
 window.storamaps_initMap = function() {
     console.log("✅ Google Maps API is loaded and ready.");
-    // Set a global flag to indicate that the API is safe to use
+    // Set a global flag to indicate that the API is safe to use.
     window.isGoogleMapsReady = true;
 };
 
@@ -167,14 +163,12 @@ async function main() {
         window.addEventListener('resize', handleResize);
         setupInstallBanner();
 
-        // 1. Initialize Firebase. This will also fetch the config from Netlify
-        //    and should store the API Key in `window.APP_CONFIG`.
         await initializeFirebase();
         
-        // 2. After Firebase is ready and config is loaded, call the function to load the Maps script.
+        // Load the Maps script.
         loadGoogleMapsScript();
 
-        // 3. Register all app routes.
+        // Register all app routes.
         registerRoute('/', Home);
         registerRoute('/map', Map);
         registerRoute('/bookings', Bookings);
@@ -186,7 +180,7 @@ async function main() {
             render: async () => `<div class="page-header"><h2 class="page-title">Page Not Found</h2></div>`
         });
 
-        // 4. Initialize the router and navigate to the initial route.
+        // Initialize the router.
         initializeRouter();
         router();
 
@@ -194,7 +188,7 @@ async function main() {
             hasUserInteracted = true;
         }, { once: true });
 
-        // 5. Monitor user authentication status.
+        // Monitor user authentication status.
         onAuthStateChanged(user => {
             const pendingBooking = sessionStorage.getItem('pendingBooking');
             if (user && pendingBooking) {
@@ -219,7 +213,7 @@ async function main() {
             }
         });
 
-        // 6. Fetch public data after the UI is ready.
+        // Fetch public data.
         showLoader(true, 'Loading initial data...');
         const data = await fetchAllPublicData();
         publicDataCache.locations = data.locations;
