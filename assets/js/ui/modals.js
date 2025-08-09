@@ -114,34 +114,29 @@ async function convertCurrencyAndUpdateUI(totalUSD) {
 
     if (!idrPriceElement || !statusElement) return;
 
+    // API Key from ExchangeRate-API.com
+    const apiKey = 'cdb0e64314935946403b2da4'; 
+
     // Immediately show loading state
     statusElement.innerHTML = `<div class="mini-loader"></div> Converting USD to IDR...`;
     idrPriceElement.textContent = '';
 
     try {
-        const response = await fetch('/assets/js/exchange');
+        const response = await fetch(`https://v6.exchangerate-api.com/v6/${apiKey}/latest/USD`);
         if (!response.ok) {
             throw new Error('Network response was not ok');
         }
         const data = await response.json();
-        
-        // Find the USD exchange rate from the BCA data
-        const usdRate = data.find(item => item.mata_uang === 'USD');
-        if (!usdRate || !usdRate.eRate || !usdRate.eRate.eRate_jual) {
-            throw new Error('USD exchange rate not found in BCA data.');
-        }
-
-        const exchangeRate = parseFloat(usdRate.eRate.eRate_jual.replace('.', '').replace(',', '.'));
+        const exchangeRate = data.conversion_rates.IDR;
         const totalIDR = totalUSD * exchangeRate;
-        const lastUpdated = data[0]?.last_updated || 'Unknown date';
 
         // Update UI with the result
         idrPriceElement.textContent = `Approx. Rp ${totalIDR.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-        statusElement.textContent = `Using BCA e-Rate: 1 USD = Rp ${exchangeRate.toLocaleString('id-ID')} (${lastUpdated})`;
+        statusElement.textContent = `Using rate: 1 USD = Rp ${exchangeRate.toLocaleString('id-ID')}`;
 
     } catch (error) {
         console.error('Currency conversion failed:', error);
-        statusElement.textContent = 'Could not fetch exchange rate from BCA.';
+        statusElement.textContent = 'Could not fetch exchange rate.';
         idrPriceElement.textContent = ''; // Clear price on error
     }
 }
@@ -577,6 +572,7 @@ function getDurationStepHTML() {
   `;
 }
 
+// --- START: MODIFIED getConfirmationStepHTML ---
 function getConfirmationStepHTML(user) {
   const summary = bookingState;
   const totals = {
@@ -634,7 +630,11 @@ function getConfirmationStepHTML(user) {
         <label>Notes (Optional)</label>
         <textarea id="booking-notes" class="sp-input-field" placeholder="Add any special instructions...">${bookingState.notes || ''}</textarea>
       </div>
-      <div id="total-price-container" class="sp-total-price-container">${getPriceDetailsHTML(totals)}</div>
+      <div id="total-price-container" class="sp-total-price-container">
+          ${getPriceDetailsHTML(totals)}
+          <div id="total-price-summary-idr" class="sp-total-price-idr text-left text-sm font-semibold text-gray-700"></div>
+          <div id="currency-conversion-status" class="text-xs text-gray-500 mt-0-5 mb-1"></div>
+      </div>
       ${user ? `
         <h4 class="mt-1-5 mb-1">Payment Method</h4>
         <div class="sp-payment-options">
@@ -647,6 +647,7 @@ function getConfirmationStepHTML(user) {
     </div>
   `;
 }
+// --- END: MODIFIED getConfirmationStepHTML ---
 
 async function handleConfirmBooking() {
   const user = getCurrentUser();
@@ -798,10 +799,31 @@ function addDurationStepLogic() {
     if (bookingState.duration) updateAndValidate();
 }
 
+// --- START: MODIFIED addConfirmationStepLogic ---
+async function updateConfirmationSummary() {
+    const totals = await calculateBookingTotals();
+    const priceSummary = document.getElementById('total-price-summary');
+    if (priceSummary) {
+        priceSummary.textContent = `Total: $${totals.finalPrice.toFixed(2)}`;
+    }
+    if (bookingState.totalPrice > 0) {
+        convertCurrencyAndUpdateUI(bookingState.totalPrice);
+    } else {
+        const idrPriceElement = document.getElementById('total-price-summary-idr');
+        const statusElement = document.getElementById('currency-conversion-status');
+        if(idrPriceElement) idrPriceElement.textContent = '';
+        if(statusElement) statusElement.textContent = '';
+    }
+}
+
 function addConfirmationStepLogic() {
     const applyVoucherBtn = document.getElementById('apply-voucher-btn');
     const voucherInput = document.getElementById('voucher-code-input');
     const voucherMessage = document.getElementById('voucher-message');
+
+    // Initial call to load summary and start conversion
+    updateConfirmationSummary();
+
     applyVoucherBtn.addEventListener('click', async () => {
         const voucherCode = voucherInput.value.trim().toUpperCase();
         if (!voucherCode) {
@@ -817,6 +839,7 @@ function addConfirmationStepLogic() {
             delete bookingState.voucher;
             voucherMessage.innerHTML = `<span class="text-danger-500">Invalid or expired voucher code.</span>`;
         }
+        // Refresh the step to recalculate totals and update the display
         renderBookingStep(); 
     });
     document.querySelectorAll('.sp-payment-option input').forEach(radio => {
@@ -824,6 +847,7 @@ function addConfirmationStepLogic() {
     });
     document.getElementById('booking-notes')?.addEventListener('input', e => bookingState.notes = e.target.value);
 }
+// --- END: MODIFIED addConfirmationStepLogic ---
 
 function addStepLogic() {
     switch(bookingState.step) {
