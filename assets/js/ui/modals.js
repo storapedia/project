@@ -3,17 +3,16 @@ import { showModal, hideModal, showToast, showLoader } from './ui-helpers.js';
 import { getCurrentUser } from '../services/auth.js';
 import { db } from '../firebase-init.js';
 import { createIpaymuInvoice } from '../services/payment-handler.js';
-import { createNewBooking, fetchUserData, submitReview, requestPickup } from '../services/firebase-api.js';
+import { createNewBooking, fetchUserData, requestPickup, updateBookingStatus, fetchStorageLocationData, fetchCourierData } from '../services/firebase-api.js';
 
 let bookingState = {};
 let globalCart = {};
 let mapInstance = null;
 let mapMarker = null;
-let pickupAutocomplete = null;
+let autocomplete = null;
 let geocoder = null;
 let mapsApiStyleInjected = false;
 
-// Format timestamp to a readable English format
 const formatDateTime = (timestamp) => {
     if (!timestamp) return 'N/A';
     return new Date(timestamp).toLocaleString('en-US', {
@@ -21,7 +20,6 @@ const formatDateTime = (timestamp) => {
     });
 };
 
-// Find the cheapest price for a location
 const getCheapestPrice = (locationData) => {
     if (!locationData.categories || locationData.categories.length === 0) return Infinity;
     return locationData.categories
@@ -30,177 +28,236 @@ const getCheapestPrice = (locationData) => {
         .reduce((min, rate) => Math.min(min, rate.price), Infinity);
 };
 
-// Calculate distance between two geo-coordinates in kilometers
 const getDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371e3; // Earth's radius in meters
+    const R = 6371e3;
     const φ1 = lat1 * Math.PI / 180;
     const φ2 = lat2 * Math.PI / 180;
     const Δφ = (lat2 - lat1) * Math.PI / 180;
     const Δλ = (lon2 - lon1) * Math.PI / 180;
     const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return (R * c) / 1000; // Return distance in km
+    return (R * c) / 1000;
 };
 
-// Calculate all booking totals, including subtotal, pickup fees, and discounts
+async function calculateServiceFee(geolocation, settings) {
+    if (!geolocation?.latitude || !settings?.pricing) return { fee: 0, distance: 0 };
+    const firstLocationId = Object.keys(bookingState.locationsToBook)[0];
+    const locationData = bookingState.locationsToBook[firstLocationId].locationData;
+    const { latitude: storeLat, longitude: storeLng } = locationData.geolocation;
+    const { latitude: serviceLat, longitude: serviceLng } = geolocation;
+    const distanceKm = getDistance(serviceLat, serviceLng, storeLat, storeLng);
+    const fee = settings.pricing.kmFee > 0 ? distanceKm * settings.pricing.kmFee : (settings.pricing.pickupFee || 0);
+    return { fee, distance: distanceKm };
+}
+
 async function calculateBookingTotals() {
     let subTotal = 0;
     let totalItems = 0;
-    let pickupFee = 0;
+    bookingState.pickupFee = 0;
+    bookingState.deliveryFee = 0;
+    bookingState.pickupDistance = 0;
+    bookingState.deliveryDistance = 0;
 
     if (!bookingState.duration) {
-        return { subTotal: 0, pickupFee: 0, discountAmount: 0, finalPrice: 0, totalItems: 0 };
+        return { subTotal: 0, pickupFee: 0, deliveryFee: 0, discountAmount: 0, finalPrice: 0, totalItems: 0 };
     }
-
+    
     Object.values(bookingState.locationsToBook).forEach(loc => {
         loc.items.forEach(item => {
+            const timeDiff = bookingState.endDate - bookingState.startDate;
+            const totalDays = Math.max(1, Math.ceil(timeDiff / (1000 * 3600 * 24)));
+            let itemPrice = 0;
             if (bookingState.duration.toLowerCase() === 'daily') {
-                const timeDiff = bookingState.endDate - bookingState.startDate;
-                const totalDays = Math.max(1, Math.ceil(timeDiff / (1000 * 3600 * 24)));
                 const dailyRate = item.size.rates.find(r => r.duration.toLowerCase() === 'daily');
-                if (dailyRate) {
-                    subTotal += item.quantity * dailyRate.price * totalDays;
-                }
+                if (dailyRate) itemPrice = item.quantity * dailyRate.price * totalDays;
             } else {
                 const rate = item.size.rates.find(r => r.duration === bookingState.duration);
-                if (rate) {
-                    subTotal += item.quantity * rate.price;
-                }
+                if (rate) itemPrice = item.quantity * rate.price;
             }
+            subTotal += itemPrice;
             totalItems += item.quantity;
         });
     });
 
-    if (bookingState.serviceType === 'pickup' && bookingState.geolocation?.latitude) {
-        try {
-            const settingsSnapshot = await db.ref('settings').once('value');
-            const settings = settingsSnapshot.val();
-            const firstLocationId = Object.keys(bookingState.locationsToBook)[0];
-            const locationData = bookingState.locationsToBook[firstLocationId].locationData;
-            const { latitude: storeLat, longitude: storeLng } = locationData.geolocation;
-            const { latitude: pickupLat, longitude: pickupLng } = bookingState.geolocation;
-            const distanceKm = getDistance(pickupLat, pickupLng, storeLat, storeLng);
-            bookingState.pickupDistance = distanceKm;
+    const settingsSnapshot = await db.ref('settings').once('value');
+    const settings = settingsSnapshot.val();
 
-            if (settings?.pricing) {
-                pickupFee = settings.pricing.kmFee > 0 ? distanceKm * settings.pricing.kmFee : (settings.pricing.pickupFee || 0);
-            }
-        } catch (error) {
-            console.error("Error calculating pickup fee:", error);
-            showToast("Could not calculate pickup fee.", "error");
-        }
+    if (bookingState.serviceType === 'pickup') {
+        const pickupResult = await calculateServiceFee(bookingState.pickupGeolocation, settings);
+        bookingState.pickupFee = pickupResult.fee;
+        bookingState.pickupDistance = pickupResult.distance;
+    }
+    if (bookingState.needsDelivery) {
+        const deliveryResult = await calculateServiceFee(bookingState.deliveryGeolocation, settings);
+        bookingState.deliveryFee = deliveryResult.fee;
+        bookingState.deliveryDistance = deliveryResult.distance;
     }
 
-    const priceBeforeDiscount = subTotal + pickupFee;
+    const totalServiceFee = bookingState.pickupFee + bookingState.deliveryFee;
+    const priceBeforeDiscount = subTotal + totalServiceFee;
     let discountAmount = 0;
     if (bookingState.voucher?.discount_percent > 0) {
         discountAmount = priceBeforeDiscount * (bookingState.voucher.discount_percent / 100);
     }
     
     const finalPrice = priceBeforeDiscount - discountAmount;
-
+    
     bookingState.subTotal = subTotal;
-    bookingState.pickupFee = pickupFee;
     bookingState.totalPrice = finalPrice;
     bookingState.totalItems = totalItems;
 
-    return { subTotal, pickupFee, discountAmount, finalPrice, totalItems };
+    return { subTotal, pickupFee: bookingState.pickupFee, deliveryFee: bookingState.deliveryFee, discountAmount, finalPrice, totalItems };
 }
 
-// --- NEW: Currency Conversion Function ---
-async function convertCurrencyAndUpdateUI(totalUSD) {
-    const idrPriceElement = document.getElementById('total-price-summary-idr');
-    const statusElement = document.getElementById('currency-conversion-status');
-
-    if (!idrPriceElement || !statusElement) return;
-
-    // API Key from ExchangeRate-API.com
-    const apiKey = 'cdb0e64314935946403b2da4'; 
-
-    // Immediately show loading state
-    statusElement.innerHTML = `<div class="mini-loader"></div> Converting USD to IDR...`;
-    idrPriceElement.textContent = '';
-
+async function getConvertedPrice(amountInUSD) {
+    const apiKey = 'cdb0e64314935946403b2da4';
     try {
         const response = await fetch(`https://v6.exchangerate-api.com/v6/${apiKey}/latest/USD`);
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
-        }
+        if (!response.ok) throw new Error('Network response was not ok');
         const data = await response.json();
         const exchangeRate = data.conversion_rates.IDR;
-        const totalIDR = totalUSD * exchangeRate;
-
-        // Update UI with the result
-        idrPriceElement.textContent = `Approx. Rp ${totalIDR.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-        statusElement.textContent = `Using rate: 1 USD = Rp ${exchangeRate.toLocaleString('id-ID')}`;
-
+        const totalIDR = amountInUSD * exchangeRate;
+        return Math.round(totalIDR);
     } catch (error) {
-        console.error('Currency conversion failed:', error);
-        statusElement.textContent = 'Could not fetch exchange rate.';
-        idrPriceElement.textContent = ''; // Clear price on error
+        console.error('Currency conversion failed for payment:', error);
+        throw new Error('Could not get currency conversion rate for payment.');
     }
 }
 
-// --- GET SERVICE STEP HTML (MODIFIED) ---
+async function convertCurrencyAndUpdateUI(totalUSD, priceSummaryId) {
+    const idrPriceElement = document.getElementById(priceSummaryId);
+    const statusElement = document.getElementById('currency-conversion-status');
+    if (!idrPriceElement || !statusElement) return;
+
+    const apiKey = 'cdb0e64314935946403b2da4';
+    statusElement.innerHTML = `<div class="mini-loader"></div> Converting USD to IDR...`;
+    idrPriceElement.textContent = '';
+    try {
+        const response = await fetch(`https://v6.exchangerate-api.com/v6/${apiKey}/latest/USD`);
+        if (!response.ok) throw new Error('Network response was not ok');
+        const data = await response.json();
+        const exchangeRate = data.conversion_rates.IDR;
+        const totalIDR = totalUSD * exchangeRate;
+        idrPriceElement.textContent = `Approx. Rp ${totalIDR.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+        statusElement.textContent = `Using rate: 1 USD = Rp ${exchangeRate.toLocaleString('id-ID')}`;
+    } catch (error) {
+        console.error('Currency conversion failed:', error);
+        statusElement.textContent = 'Could not fetch exchange rate.';
+        idrPriceElement.textContent = '';
+    }
+}
+
 function getServiceStepHTML() {
+  const isPickup = bookingState.serviceType === 'pickup';
   return `
+    <style>
+        .highlight-blink {
+            animation: blinker 1s linear infinite;
+        }
+        @keyframes blinker {
+            50% { opacity: 0; }
+        }
+    </style>
     <div class="sp-bookings-flow-header">
-      <button class="back-step-btn">&larr;</button>
-      <h3 class="modal-title">2. Choose Service</h3>
+      <h3 class="modal-title">1. Choose Service</h3>
       <button class="close-modal-btn">&times;</button>
     </div>
     <div class="sp-bookings-flow-body">
-        <div class="sp-service-type-toggle">
-            <button type="button" data-service="self-dropoff" class="${bookingState.serviceType === 'self-dropoff' ? 'active' : ''}">Self Drop-off</button>
-            <button type="button" data-service="pickup" class="${bookingState.serviceType === 'pickup' ? 'active' : ''}">Pickup Service</button>
-        </div>
-        <div class="sp-summary-section">
-            <h4 class="mt-1 mb-1">Booking Summary</h4>
-            <div id="sp-editable-summary-list"></div>
-        </div>
-        <div id="sp-service-summary-details" class="sp-confirmation-summary mt-1" style="display: none;"></div>
+      <p class="text-sm mb-1">How would you like to handle your items?</p>
+      <div class="sp-service-type-toggle sp-service-type-toggle-vertical">
+        <button type="button" data-service="self-dropoff" class="${!isPickup ? 'active' : ''}" style="padding-top: 10px;">Self Drop-off</button>
+        <button type="button" data-service="pickup" class="${isPickup ? 'active' : ''}" style="padding-top: 10px;">Pickup Service</button>
+      </div>
+      
+      <div id="sp-pickup-service-options" style="display: ${isPickup ? 'block' : 'none'};">
+          <div class="sp-confirmation-summary mt-1">
+              <h4 class="mt-0 mb-1">Pickup Details</h4>
+              <p class="no-margin text-sm text-gray-700"><b>Address:</b> ${bookingState.pickupAddress || 'Not set'}</p>
+              <p class="no-margin text-sm text-gray-700"><b>Phone:</b> ${bookingState.contactNumber || 'Not set'}</p>
+              <button data-address-type="pickup" class="btn btn-primary btn-sm mt-1">${bookingState.pickupAddress ? 'Edit Details' : 'Set Pickup Details'}</button>
+              <div class="sp-bookings-flow-input-group mt-1">
+                  <label for="pickup-time-input">Pickup Time</label>
+                  <input type="time" id="pickup-time-input" class="sp-input-field" value="${bookingState.pickupTime || ''}">
+              </div>
+          </div>
+          <div class="sp-bookings-flow-input-group mt-1">
+              <label class="sp-checkbox-label ${bookingState.needsDelivery ? 'highlight-blink' : ''}">
+                  <input type="checkbox" id="needs-delivery-checkbox" ${bookingState.needsDelivery ? 'checked' : ''}>
+                  <span class="font-bold">Need delivery service after storage?</span>
+              </label>
+          </div>
+          <div id="sp-delivery-details-section" class="sp-confirmation-summary mt-1" style="display: ${bookingState.needsDelivery ? 'block' : 'none'};">
+              <h4 class="mt-0 mb-1">Delivery Details</h4>
+              <p class="no-margin text-sm text-gray-700"><b>Address:</b> ${bookingState.deliveryAddress || 'Not set'}</p>
+              <p class="no-margin text-sm text-gray-700"><b>Phone:</b> ${bookingState.deliveryContactNumber || 'Not set'}</p>
+              <button data-address-type="delivery" class="btn btn-primary btn-sm mt-1">${bookingState.deliveryAddress ? 'Edit Details' : 'Set Delivery Details'}</button>
+              <div class="sp-bookings-flow-input-group mt-1">
+                  <label for="delivery-time-input">Delivery Time</label>
+                  <input type="time" id="delivery-time-input" class="sp-input-field" value="${bookingState.deliveryTime || ''}">
+              </div>
+          </div>
+      </div>
+      <div id="validation-message" class="text-sm text-danger-500 text-center mt-1"></div>
+      <div class="sp-summary-section">
+        <h4 class="mt-1-5 mb-1">Booking Summary</h4>
+        <div id="sp-editable-summary-list"></div>
+      </div>
     </div>
     <div class="sp-bookings-flow-footer">
-        <div id="total-price-summary" class="sp-total-price text-left mb-0-5">Total: $0.00</div>
-        <div id="total-price-summary-idr" class="sp-total-price-idr text-left text-sm font-semibold text-gray-700"></div>
-        <div id="currency-conversion-status" class="text-xs text-gray-500 mt-0-5 mb-1"></div>
-        <button id="next-step-btn" class="btn btn-primary btn-full" disabled>Next</button>
+      <button id="next-step-btn" class="btn btn-primary btn-full" disabled>Next</button>
     </div>
   `;
 }
 
-// --- ADD SERVICE STEP LOGIC (MODIFIED) ---
-function addServiceStepLogic() {
+async function updateAndValidateServiceStep() {
     const nextBtn = document.getElementById('next-step-btn');
-    const serviceTypeToggle = document.querySelector('.sp-service-type-toggle');
-    const summaryList = document.getElementById('sp-editable-summary-list');
+    const validationMessage = document.getElementById('validation-message');
+    let isFormValid = true;
+    let message = '';
 
-    const validateAndRefresh = async () => {
-        // Show loading state for currency conversion immediately
-        const statusElement = document.getElementById('currency-conversion-status');
-        if (statusElement) {
-            statusElement.innerHTML = `<div class="mini-loader"></div> Preparing summary...`;
+    if (Object.keys(bookingState.locationsToBook).length === 0) {
+        isFormValid = false;
+        message = 'Please select a storage unit to book.';
+    } else if (bookingState.serviceType === 'pickup') {
+        if (!bookingState.pickupAddress || !bookingState.contactNumber || !bookingState.pickupTime) {
+            isFormValid = false;
+            message = 'Please provide complete pickup details.';
         }
-        
-        // Update the USD summary first
-        await updateBookingSummary();
-        
-        // Then, trigger the currency conversion
-        if (bookingState.totalPrice > 0) {
-            convertCurrencyAndUpdateUI(bookingState.totalPrice);
-        } else {
-            // Clear currency fields if total is zero
-            const idrPriceElement = document.getElementById('total-price-summary-idr');
-            if(idrPriceElement) idrPriceElement.textContent = '';
-            if(statusElement) statusElement.textContent = '';
+    }
+    if (bookingState.needsDelivery) {
+        if (!bookingState.deliveryAddress || !bookingState.deliveryContactNumber || !bookingState.deliveryTime) {
+            isFormValid = false;
+            message = 'Please provide complete delivery details.';
         }
-        
-        const isFormValid = !!bookingState.serviceType;
-        if(nextBtn) {
-            nextBtn.disabled = !isFormValid;
-            nextBtn.style.opacity = isFormValid ? '1' : '0.5';
-        }
-    };
+    }
+    
+    await updateBookingSummary(true);
+    
+    if (nextBtn) {
+        nextBtn.disabled = !isFormValid;
+        nextBtn.style.opacity = isFormValid ? '1' : '0.5';
+    }
+    if (validationMessage) {
+        validationMessage.textContent = message;
+    }
+}
+
+function addServiceStepLogic() {
+    const serviceTypeToggle = document.querySelector('.sp-service-type-toggle');
+    const pickupOptions = document.getElementById('sp-pickup-service-options');
+    const deliveryCheckbox = document.getElementById('needs-delivery-checkbox');
+    const deliverySection = document.getElementById('sp-delivery-details-section');
+    const pickupTimeInput = document.getElementById('pickup-time-input');
+    const deliveryTimeInput = document.getElementById('delivery-time-input');
+
+    const now = new Date();
+    now.setHours(now.getHours() + 3);
+    const minTime = now.toTimeString().slice(0, 5);
+    pickupTimeInput.min = minTime;
+    if (!bookingState.pickupTime || pickupTimeInput.value < minTime) {
+        bookingState.pickupTime = minTime;
+        pickupTimeInput.value = minTime;
+    }
 
     serviceTypeToggle.addEventListener('click', e => {
         const btn = e.target.closest('button[data-service]');
@@ -208,50 +265,590 @@ function addServiceStepLogic() {
             document.querySelectorAll('.sp-service-type-toggle button').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             bookingState.serviceType = btn.dataset.service;
-            validateAndRefresh();
+            pickupOptions.style.display = bookingState.serviceType === 'pickup' ? 'block' : 'none';
+            if(bookingState.serviceType !== 'pickup') {
+                bookingState.needsDelivery = false;
+                deliveryCheckbox.checked = false;
+                deliverySection.style.display = 'none';
+            }
+            updateAndValidateServiceStep();
         }
     });
 
-    summaryList.addEventListener('click', e => {
-        const editBtn = e.target.closest('[data-action="edit-summary-item"]');
-        if (editBtn) {
-            const { locationId, categoryName } = editBtn.dataset;
-            const locationData = bookingState.locationsToBook[locationId]?.locationData;
-            const category = locationData?.categories.find(cat => cat.name === categoryName);
-            if (category && locationData) {
-                renderCategoryDetailPopup(category, locationData);
-            } else {
-                showToast('Could not edit item. Category not found.', 'error');
-            }
+    deliveryCheckbox.addEventListener('change', e => {
+        bookingState.needsDelivery = e.target.checked;
+        deliverySection.style.display = bookingState.needsDelivery ? 'block' : 'none';
+        updateAndValidateServiceStep();
+    });
+
+    pickupTimeInput.addEventListener('change', () => {
+        if (pickupTimeInput.value < minTime) {
+            showToast(`Pickup time must be at least 3 hours from now.`, 'warning');
+            pickupTimeInput.value = minTime;
         }
+        bookingState.pickupTime = pickupTimeInput.value;
+        updateAndValidateServiceStep();
+    });
+
+    deliveryTimeInput.addEventListener('change', () => {
+        bookingState.deliveryTime = deliveryTimeInput.value;
+        updateAndValidateServiceStep();
     });
     
-    // Initial call to load summary and start conversion
-    validateAndRefresh();
+    const pickupAddressButton = document.querySelector('button[data-address-type="pickup"]');
+    if (pickupAddressButton) {
+        pickupAddressButton.addEventListener('click', () => {
+            renderAddressModal('pickup');
+        });
+    }
+
+    const deliveryAddressButton = document.querySelector('button[data-address-type="delivery"]');
+    if (deliveryAddressButton) {
+        deliveryAddressButton.addEventListener('click', () => {
+            renderAddressModal('delivery');
+        });
+    }
+    updateAndValidateServiceStep();
 }
 
+function getDurationStepHTML() {
+  const firstLocationId = Object.keys(bookingState.locationsToBook)[0];
+  const firstItem = bookingState.locationsToBook[firstLocationId].items[0];
+  const sharedRates = firstItem.size.rates;
+  const startDate = new Date(bookingState.startDate);
+  const isDaily = bookingState.duration && bookingState.duration.toLowerCase() === 'daily';
 
-// ... [SISA KODE DI BAWAH INI SAMA, TIDAK PERLU DIUBAH] ...
-
-function renderSchedules(schedules) {
-  if (!schedules) return '<p>Opening hours not available.</p>';
-  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const endDateHTML = isDaily 
+      ? `<input type="date" id="end-date" class="sp-input-field" value="${new Date(bookingState.endDate).toISOString().split('T')[0]}">` 
+      : `<span class="text-primary-500 font-bold">${formatDateTime(bookingState.endDate)}</span>`;
+      
   return `
-    <table class="opening-hours-table">
-      <tbody>
-        ${days.map(day => `
-          <tr class="border-bottom">
-            <td class="font-semibold">${day}</td>
-            <td class="text-right">
-              ${(schedules[day] && schedules[day].open_hour !== 'Closed')
-                ? `${schedules[day].open_hour} - ${schedules[day].close_hour}`
-                : `<span class="closed-day">Closed</span>`}
-            </td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
+    <div class="sp-bookings-flow-header">
+      <button class="back-step-btn">&larr;</button>
+      <h3 class="modal-title">2. Select Duration & Date</h3>
+      <button class="close-modal-btn">&times;</button>
+    </div>
+    <div class="sp-bookings-flow-body">
+      <div class="sp-bookings-flow-input-group">
+        <label>Duration</label>
+        <div class="sp-duration-options">
+          ${sharedRates.map(rate => `
+            <button type="button" class="sp-duration-btn ${bookingState.duration === rate.duration ? 'active' : ''}" data-duration="${rate.duration}">
+              <span>${rate.duration}</span><br><span class="text-sm text-gray-600">$${rate.price.toFixed(2)}</span>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+      <div class="sp-bookings-flow-input-group">
+        <label>Start Date & Time</label>
+        <div class="flex-container">
+          <input type="date" id="start-date" class="sp-input-field" value="${startDate.toISOString().split('T')[0]}">
+          <input type="time" id="start-time" class="sp-input-field" value="${startDate.toTimeString().slice(0, 5)}">
+        </div>
+      </div>
+      <div class="sp-bookings-flow-input-group">
+        <label>End Date & Time</label>
+        <div class="sp-readonly-field">
+            <div id="end-date-container">${endDateHTML}</div>
+            <p class="no-margin text-sm text-gray-600 mt-0-5" id="duration-info-text"></p>
+        </div>
+      </div>
+    </div>
+    <div class="sp-bookings-flow-footer">
+      <div id="price-summary-container" style="display: none;"></div>
+      <button id="next-step-btn" class="btn btn-primary btn-full" disabled>Next</button>
+    </div>
   `;
+}
+
+function addDurationStepLogic() {
+    const modalContent = document.querySelector('#booking-flow-modal .modal-content');
+    if (!modalContent) return;
+    const nextBtn = document.getElementById('next-step-btn');
+    const updateAndValidate = async () => {
+        const startDateInput = document.getElementById('start-date');
+        const startTimeInput = document.getElementById('start-time');
+        const endDateInput = document.getElementById('end-date');
+        bookingState.startDate = new Date(`${startDateInput.value}T${startTimeInput.value}`).getTime();
+        let newEndDate;
+        const durationType = bookingState.duration?.toLowerCase();
+        
+        if (durationType === 'daily') {
+            const endDateValue = endDateInput ? new Date(`${endDateInput.value}T${startTimeInput.value}`) : new Date(bookingState.startDate);
+            if (endDateValue.getTime() <= bookingState.startDate) {
+                endDateValue.setDate(new Date(bookingState.startDate).getDate() + 1);
+                if (endDateInput) endDateInput.value = endDateValue.toISOString().split('T')[0];
+            }
+            newEndDate = endDateValue;
+        } else {
+            newEndDate = new Date(bookingState.startDate);
+            switch (durationType) {
+                case 'weekly': newEndDate.setDate(newEndDate.getDate() + 7); break;
+                case 'monthly': newEndDate.setMonth(newEndDate.getMonth() + 1); break;
+                default:
+                    if (!isNaN(parseInt(durationType))) {
+                        newEndDate.setDate(newEndDate.getDate() + parseInt(durationType));
+                    }
+                    break;
+            }
+            const endDateContainer = document.getElementById('end-date-container');
+            if (endDateContainer) {
+                endDateContainer.innerHTML = `<span class="text-primary-500 font-bold">${formatDateTime(newEndDate.getTime())}</span>`;
+            }
+        }
+        
+        bookingState.endDate = newEndDate.getTime();
+
+        if (bookingState.endDate >= bookingState.startDate) {
+            const timeDiff = bookingState.endDate - bookingState.startDate;
+            const totalDays = Math.max(1, Math.ceil(timeDiff / (1000 * 3600 * 24)));
+            const durationInfoText = document.getElementById('duration-info-text');
+            if (durationInfoText) {
+                durationInfoText.textContent = `Total duration: ${totalDays} day(s)`;
+            }
+        } else {
+             const durationInfoText = document.getElementById('duration-info-text');
+             if (durationInfoText) durationInfoText.textContent = '';
+        }
+        await updateBookingSummary();
+        
+        const isFormValid = bookingState.duration && bookingState.endDate >= bookingState.startDate;
+        if (nextBtn) {
+            nextBtn.disabled = !isFormValid;
+            nextBtn.style.opacity = isFormValid ? '1' : '0.5';
+        }
+    };
+    modalContent.addEventListener('change', e => {
+        if (e.target.matches('#start-date, #start-time, #end-date')) {
+            updateAndValidate();
+        }
+    });
+    modalContent.querySelectorAll('.sp-duration-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            modalContent.querySelectorAll('.sp-duration-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            bookingState.duration = btn.dataset.duration;
+            renderBookingStep();
+        });
+    });
+    if (bookingState.duration) {
+        updateAndValidate();
+    } else {
+        updateBookingSummary();
+    }
+}
+
+function getConfirmationStepHTML(user) {
+  const summary = bookingState;
+  
+  const itemsSummary = Object.values(summary.locationsToBook).flatMap(loc =>
+    loc.items.map(item => `<p class="no-margin"><b>Item:</b> ${item.size.name} (${item.quantity}x) at ${loc.locationData.name} - ${summary.duration}</p>`)
+  ).join('');
+
+  let serviceSummaryHTML = `<p class="no-margin"><b>Service:</b> ${summary.serviceType === 'pickup' ? 'Pickup Service' : 'Self Drop-off'}</p>`;
+  if (summary.serviceType === 'pickup') {
+      serviceSummaryHTML += `<p class="no-margin"><b>Pickup Address:</b> ${summary.pickupAddress || 'Not set'}</p>`;
+      serviceSummaryHTML += `<p class="no-margin"><b>Pickup Phone:</b> ${summary.contactNumber || 'Not set'}</p>`;
+      serviceSummaryHTML += `<p class="no-margin"><b>Pickup Time:</b> ${summary.pickupTime || 'Not set'}</p>`;
+  }
+  if (summary.needsDelivery) {
+      serviceSummaryHTML += `<p class="no-margin mt-1 font-semibold">Delivery Service requested.</p>`;
+      serviceSummaryHTML += `<p class="no-margin"><b>Delivery Address:</b> ${summary.deliveryAddress || 'Not set'}</p>`;
+      serviceSummaryHTML += `<p class="no-margin"><b>Delivery Phone:</b> ${summary.deliveryContactNumber || 'Not set'}</p>`;
+      serviceSummaryHTML += `<p class="no-margin"><b>Delivery Time:</b> ${summary.deliveryTime || 'Not set'}</p>`;
+  }
+
+  return `
+    <div class="sp-bookings-flow-header">
+      <button class="back-step-btn">&larr;</button>
+      <h3 class="modal-title">3. Confirmation & Payment</h3>
+      <button class="close-modal-btn">&times;</button>
+    </div>
+    <div class="sp-bookings-flow-body text-sm overflow-y-auto">
+      <h4 class="mt-0 mb-1">Booking Summary</h4>
+      <div class="sp-confirmation-summary">
+        ${itemsSummary}
+        <p class="no-margin"><b>From:</b> ${formatDateTime(summary.startDate)}</p>
+        <p class="no-margin"><b>To:</b> ${formatDateTime(summary.endDate)}</p>
+      </div>
+      <div class="sp-confirmation-summary mt-1">
+        ${serviceSummaryHTML}
+      </div>
+      <div class="sp-bookings-flow-input-group mt-1">
+        <label>Voucher Code</label>
+        <div class="flex-container">
+          <input type="text" id="voucher-code-input" class="sp-input-field" placeholder="Enter voucher code" value="${bookingState.voucher?.code || ''}">
+          <button type="button" id="apply-voucher-btn" class="btn btn-primary">Apply</button>
+        </div>
+        <div id="voucher-message" class="text-sm mt-0-5"></div>
+      </div>
+      <div class="sp-bookings-flow-input-group mt-1">
+        <label>Notes (Optional)</label>
+        <textarea id="booking-notes" class="sp-input-field" placeholder="Add any special instructions...">${bookingState.notes || ''}</textarea>
+      </div>
+      <div id="price-summary-container" class="sp-total-price-container"></div>
+      ${user ? `
+        <h4 class="mt-1-5 mb-1">Payment Method</h4>
+        <div class="sp-payment-options">
+          <label class="sp-payment-option"><input type="radio" name="paymentMethod" value="on_site" ${bookingState.paymentMethod === 'on_site' ? 'checked' : ''}><span>Pay On-Site</span></label>
+          <label class="sp-payment-option"><input type="radio" name="paymentMethod" value="online" ${bookingState.paymentMethod === 'online' ? 'checked' : ''}><span>Pay Online (iPaymu)</span></label>
+        </div>` : ''}
+    </div>
+    <div class="sp-bookings-flow-footer">
+      ${user ? '<button id="confirm-book-btn" class="btn btn-success btn-full">Confirm & Book</button>' : '<button id="login-to-book-btn" class="btn btn-primary btn-full">Login to Complete Booking</button>'}
+    </div>
+  `;
+}
+
+function addConfirmationStepLogic() {
+    const applyVoucherBtn = document.getElementById('apply-voucher-btn');
+    if (applyVoucherBtn) {
+        applyVoucherBtn.addEventListener('click', async () => {
+            const code = document.getElementById('voucher-code-input').value.trim().toUpperCase();
+            const messageEl = document.getElementById('voucher-message');
+            if (!code) {
+                messageEl.textContent = 'Please enter a code.';
+                messageEl.className = 'text-sm mt-0-5 text-warning-500';
+                return;
+            }
+            try {
+                const voucherSnapshot = await db.ref(`vouchers/${code}`).once('value');
+                if (voucherSnapshot.exists() && voucherSnapshot.val().active) {
+                    bookingState.voucher = voucherSnapshot.val();
+                    messageEl.textContent = `Success! ${bookingState.voucher.discount_percent}% discount applied.`;
+                    messageEl.className = 'text-sm mt-0-5 text-success-500';
+                } else {
+                    bookingState.voucher = null;
+                    messageEl.textContent = 'Invalid or expired voucher code.';
+                    messageEl.className = 'text-sm mt-0-5 text-danger-500';
+                }
+            } catch (error) {
+                messageEl.textContent = 'Could not verify voucher.';
+                messageEl.className = 'text-sm mt-0-5 text-danger-500';
+            }
+            await updateBookingSummary();
+        });
+    }
+    updateBookingSummary();
+}
+
+async function updateBookingSummary(hidePrice = false) {
+    const summaryList = document.getElementById('sp-editable-summary-list');
+    const priceSummaryContainer = document.getElementById('price-summary-container');
+    
+    if (hidePrice) {
+        if (priceSummaryContainer) priceSummaryContainer.style.display = 'none';
+    } else {
+        const totals = await calculateBookingTotals();
+        if (priceSummaryContainer) {
+            priceSummaryContainer.style.display = 'block';
+            priceSummaryContainer.innerHTML = getPriceDetailsHTML(totals);
+            if (totals.finalPrice > 0) {
+                convertCurrencyAndUpdateUI(totals.finalPrice, 'total-price-summary-idr');
+            }
+        }
+    }
+
+    let itemsSummaryHTML = '';
+    Object.values(bookingState.locationsToBook).forEach(loc => {
+        loc.items.forEach(item => {
+            itemsSummaryHTML += `
+                <div class="sp-summary-item-card">
+                    <div>
+                        <p class="font-semibold">${item.size.name} (${item.quantity}x)</p>
+                        <p class="text-sm text-gray-600">at ${loc.locationData.name}</p>
+                        ${bookingState.duration ? `<p class="mt-0-5 text-sm text-primary-500 font-bold">${bookingState.duration}</p>` : ''}
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-action="edit-summary-item" data-location-id="${loc.locationData.id}" data-category-name="${item.category.name}">Edit</button>
+                </div>`;
+        });
+    });
+    if (summaryList) summaryList.innerHTML = itemsSummaryHTML || '<p class="text-sm text-gray-500">No items selected.</p>';
+}
+
+function getPriceDetailsHTML(totals) {
+    let html = `<div class="sp-price-details">Subtotal: $${totals.subTotal.toFixed(2)}</div>`;
+    if (totals.pickupFee > 0) {
+        html += `<div class="sp-price-details">Pickup Fee: $${totals.pickupFee.toFixed(2)}</div>`;
+    }
+    if (totals.deliveryFee > 0) {
+        html += `<div class="sp-price-details">Delivery Fee: $${totals.deliveryFee.toFixed(2)}</div>`;
+    }
+    if (totals.discountAmount > 0) {
+        const originalPrice = totals.finalPrice + totals.discountAmount;
+        html += `
+            <div class="sp-price-details sp-original-price-strikethrough">Original: <s>$${originalPrice.toFixed(2)}</s></div>
+            <div class="sp-price-details sp-discount-text">Discount: -$${totals.discountAmount.toFixed(2)}</div>
+        `;
+    }
+    html += `<div id="total-price-summary" class="sp-total-price">Total: $${totals.finalPrice.toFixed(2)}</div>`;
+    html += `<div id="total-price-summary-idr" class="sp-total-price-idr text-left text-sm font-semibold text-gray-700"></div>`;
+    html += `<div id="currency-conversion-status" class="text-xs text-gray-500 mt-0-5 mb-1"></div>`;
+    return html;
+}
+
+function addStepLogic() {
+    switch(bookingState.step) {
+        case 1: addServiceStepLogic(); break;
+        case 2: addDurationStepLogic(); break;
+        case 3: addConfirmationStepLogic(); break;
+    }
+}
+
+async function handleConfirmBooking() {
+  const user = getCurrentUser();
+  if (!user) { showToast('You must be logged in to book.', 'error'); return; }
+  const paymentMethod = document.querySelector('input[name="paymentMethod"]:checked')?.value;
+  if (!paymentMethod) { showToast("Please select a payment method.", "error"); return; }
+  
+  if (bookingState.serviceType === 'pickup') {
+      if (!bookingState.pickupAddress || !bookingState.contactNumber || !bookingState.pickupTime) {
+          showToast("Please provide complete pickup details (address, phone, time).", "error"); return;
+      }
+  }
+  if (bookingState.needsDelivery) {
+      if (!bookingState.deliveryAddress || !bookingState.deliveryContactNumber || !bookingState.deliveryTime) {
+          showToast("Please provide complete delivery details (address, phone, time).", "error"); return;
+      }
+  }
+
+  bookingState.notes = document.getElementById('booking-notes')?.value.trim() || '';
+  showLoader(true, 'Creating your booking...');
+
+  try {
+    const userData = await fetchUserData(user.uid);
+    const totals = await calculateBookingTotals();
+    const orderId = db.ref('bookings').push().key;
+
+    const bookingsToCreate = [];
+    Object.values(bookingState.locationsToBook).forEach(loc => {
+        loc.items.forEach(item => {
+            const timeDiff = bookingState.endDate - bookingState.startDate;
+            const totalDays = Math.max(1, Math.ceil(timeDiff / (1000 * 3600 * 24)));
+            let itemPrice = 0;
+            if (bookingState.duration.toLowerCase() === 'daily') {
+                const rate = item.size.rates.find(r => r.duration.toLowerCase() === 'daily');
+                if(rate) itemPrice = item.quantity * rate.price * totalDays;
+            } else {
+                const rate = item.size.rates.find(r => r.duration === bookingState.duration);
+                if (rate) itemPrice = item.quantity * rate.price;
+            }
+            
+            const proportion = totals.subTotal > 0 ? itemPrice / totals.subTotal : 1 / totals.totalItems;
+            const itemPickupFee = (totals.pickupFee || 0) * proportion;
+            const itemDeliveryFee = (totals.deliveryFee || 0) * proportion;
+            const itemDiscount = (totals.discountAmount || 0) * proportion;
+            const finalItemPrice = itemPrice + itemPickupFee + itemDeliveryFee - itemDiscount;
+
+            const newBookingData = {
+                orderId, userId: user.uid, locationId: loc.locationData.id, locationName: loc.locationData.name,
+                category: item.category.name, storageType: item.size.name, quantity: item.quantity,
+                duration: bookingState.duration, totalPrice: finalItemPrice, startDate: bookingState.startDate,
+                endDate: bookingState.endDate, serviceType: bookingState.serviceType, paymentMethod,
+                paymentStatus: paymentMethod === 'online' ? 'pending' : 'unpaid_on_site',
+                bookingStatus: 'active', notes: bookingState.notes,
+                needsDelivery: bookingState.needsDelivery || false,
+            };
+
+            if (bookingState.voucher) {
+                newBookingData.voucherCode = bookingState.voucher.code;
+                newBookingData.discountApplied = bookingState.voucher.discount_percent;
+            }
+            if (bookingState.serviceType === 'pickup') {
+                newBookingData.pickupAddress = bookingState.pickupAddress;
+                newBookingData.pickupGeolocation = bookingState.pickupGeolocation;
+                newBookingData.contactNumber = bookingState.contactNumber;
+                newBookingData.pickupFee = itemPickupFee;
+                newBookingData.pickupDistance = bookingState.pickupDistance;
+                newBookingData.pickupTime = bookingState.pickupTime;
+                newBookingData.pickupStatus = 'requested';
+            }
+            if (bookingState.needsDelivery) {
+                newBookingData.deliveryAddress = bookingState.deliveryAddress;
+                newBookingData.deliveryGeolocation = bookingState.deliveryGeolocation;
+                newBookingData.deliveryContactNumber = bookingState.deliveryContactNumber;
+                newBookingData.deliveryFee = itemDeliveryFee;
+                newBookingData.deliveryDistance = bookingState.deliveryDistance;
+                newBookingData.deliveryTime = bookingState.deliveryTime;
+                newBookingData.deliveryStatus = 'requested';
+            }
+            bookingsToCreate.push(newBookingData);
+        });
+    });
+    
+    const creationPromises = bookingsToCreate.map(b => createNewBooking(b));
+    const createdBookings = await Promise.all(creationPromises);
+    
+    const pickupBookings = createdBookings.filter(b => b.serviceType === 'pickup');
+    for (const booking of pickupBookings) {
+        await requestPickup(booking.locationId, booking);
+    }
+    
+    globalCart = {};
+    bookingState = {};
+    
+if (paymentMethod === 'online') {
+    showLoader(true, 'Converting currency for payment...');
+    try {
+        const amountInIDR = await getConvertedPrice(totals.finalPrice);
+        const finalAmount = parseInt(amountInIDR, 10); 
+        showLoader(true, 'Redirecting to payment gateway...');
+        const paymentData = {
+            id: orderId,
+            totalPrice: finalAmount,
+            userEmail: userData?.email || 'customer@example.com',
+            userName: userData?.name || 'Customer'
+        };
+        await createIpaymuInvoice(paymentData);
+    } catch (conversionError) {
+        showLoader(false);
+        showToast(conversionError.message, 'error');
+    }
+} else {
+      showLoader(false);
+      showToast('Booking created successfully!', 'success');
+      hideModal('booking-flow-modal');
+      window.location.hash = '#/bookings';
+    }
+  } catch (error) {
+    showLoader(false);
+    showToast('Failed to create booking. Please try again.', 'error');
+    console.error("Booking creation error:", error);
+  }
+}
+
+function renderBookingStep() {
+    const user = getCurrentUser();
+    let content = '';
+    switch (bookingState.step) {
+        case 1: content = getServiceStepHTML(); break;
+        case 2: content = getDurationStepHTML(); break;
+        case 3: content = getConfirmationStepHTML(user); break;
+        default: hideModal('booking-flow-modal'); return;
+    }
+    const modalContent = document.querySelector('#booking-flow-modal .modal-content');
+    if (modalContent) {
+        modalContent.innerHTML = content;
+        addStepLogic();
+    }
+}
+
+export function renderBookingFlowModal(restoredState = null) {
+  if (restoredState) {
+    bookingState = { ...restoredState };
+  } else if (Object.keys(globalCart).length > 0) {
+    const startDate = new Date();
+    startDate.setHours(startDate.getHours() + 1, 0, 0, 0);
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + 1);
+    bookingState = {
+      step: 1, startDate: startDate.getTime(), endDate: endDate.getTime(), duration: null,
+      totalPrice: 0, totalItems: 0, locationsToBook: globalCart, paymentMethod: 'on_site',
+      serviceType: 'self-dropoff', needsDelivery: false, notes: ''
+    };
+  } else {
+    showToast('Please select a storage unit to book.', 'error');
+    return;
+  }
+  showModal('booking-flow-modal', `<div class="modal-content"><div class="loader"></div></div>`);
+  
+  const modal = document.getElementById('booking-flow-modal');
+  modal.addEventListener('click', e => {
+    const target = e.target;
+    if (target.closest('.close-modal-btn')) {
+      hideModal('booking-flow-modal');
+    } else if (target.closest('.back-step-btn')) {
+      if (bookingState.step > 1) {
+        bookingState.step--;
+        renderBookingStep();
+      }
+    } else if (target.closest('#next-step-btn')) {
+        if (bookingState.step < 3) {
+            bookingState.step++;
+            renderBookingStep();
+        }
+    } else if (target.closest('#login-to-book-btn')) {
+        sessionStorage.setItem('pendingBooking', JSON.stringify(bookingState));
+        hideModal('booking-flow-modal');
+        window.location.hash = '#/auth';
+    } else if (target.closest('#confirm-book-btn')) {
+        handleConfirmBooking();
+    }
+  });
+
+  renderBookingStep();
+}
+
+export async function renderLocationDetailModal(locationData, reviews) {
+  const locationId = locationData.id;
+  const reviewsForLocation = reviews?.[locationId] ? Object.values(reviews[locationId]) : [];
+  const cheapestPrice = getCheapestPrice(locationData);
+  const content = `
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">${locationData.name}</h3>
+        <button class="close-modal-btn" data-modal-id="location-detail-modal">&times;</button>
+      </div>
+      <div class="modal-body bg-neutral-50 overflow-y-auto">
+        <div class="location-detail-image" style="background-image: url('${locationData.imageUrl}');"></div>
+        <div class="location-detail-card">
+          <div class="location-detail-info">
+            <p class="location-detail-address">${locationData.address}</p>
+            <span class="location-status-badge ${locationData.status === 'Open' ? 'open' : 'closed'}">${locationData.status}</span>
+          </div>
+          <p class="location-detail-description">${locationData.description || ''}</p>
+        </div>
+        <h4 class="mt-1-5 mb-0-75">Features</h4>
+        <div class="location-features-list">
+          ${(locationData.features || []).map(f => `<span class="feature-tag"><i class="${f.icon}"></i><span>${f.name}</span></span>`).join('')}
+        </div>
+        <h4 class="mt-1-5 mb-0-75">Opening Hours</h4>
+        <div class="location-detail-card">${renderSchedules(locationData.schedules)}</div>
+        <div id="available-storage-section">
+          <h4 class="mt-1-5 mb-0-75">Available Storage</h4>
+          ${renderCategorySlider(locationData.categories)}
+        </div>
+        <h4 class="mt-1-5 mb-0-75">Reviews (${reviewsForLocation.length})</h4>
+        <div class="location-detail-card p-0-5">
+          ${reviewsForLocation.length > 0 ? reviewsForLocation.map(r => `<div class="review-item"><div class="review-header"><h5 class="font-semibold">${r.name}</h5><div class="star-rating">${getStarRatingHTML(r.rating)}</div></div><p class="review-comment">${r.comment}</p></div>`).join('') : '<p class="text-center text-gray-500 p-1">No reviews yet.</p>'}
+        </div>
+      </div>
+      <div class="modal-footer sticky-footer">
+        <div class="sp-start-price">
+          Starts from <strong class="text-xl text-dark-secondary">$${cheapestPrice !== Infinity ? cheapestPrice.toFixed(2) : 'N/A'}</strong>
+        </div>
+        <button data-action="scroll-to-storage" class="btn btn-primary">Book a Space</button>
+      </div>
+    </div>
+  `;
+  showModal('location-detail-modal', content);
+  addDetailModalListeners(locationData);
+}
+
+export function addDetailModalListeners(locationData) {
+  const modal = document.getElementById('location-detail-modal');
+  if (!modal) return;
+  modal.addEventListener('click', e => {
+    const target = e.target;
+    const scrollBtn = target.closest('[data-action="scroll-to-storage"]');
+    const viewCategoryBtn = target.closest('[data-action="view-category-detail"]');
+    const closeModalBtn = target.closest('.close-modal-btn');
+    const startBookingBtn = target.closest('[data-action="start-booking-flow"]');
+    if (scrollBtn) {
+      modal.querySelector('#available-storage-section')?.scrollIntoView({ behavior: 'smooth' });
+    } else if (viewCategoryBtn) {
+      const categoryIndex = viewCategoryBtn.dataset.categoryIndex;
+      const category = locationData.categories[categoryIndex];
+      if (category) {
+        renderCategoryDetailPopup(category, locationData);
+      }
+    } else if (startBookingBtn) {
+      hideModal('location-detail-modal');
+      renderBookingFlowModal();
+    } else if (closeModalBtn) {
+      hideModal('location-detail-modal');
+    }
+  });
 }
 
 function renderCategorySlider(categories) {
@@ -356,7 +953,7 @@ function addCategoryDetailListeners(category, locationData) {
       if (size && currentQty < size.capacity) {
         currentQty++;
         if (display) display.textContent = currentQty;
-        quantitiesInPopup[sizeName] = currentQty;
+        quantitiesInPopup[size.name] = currentQty;
       }
     } else if (decreaseBtn) {
       const sizeName = decreaseBtn.dataset.sizeName;
@@ -366,7 +963,7 @@ function addCategoryDetailListeners(category, locationData) {
       if (size && currentQty > 0) {
         currentQty--;
         if (display) display.textContent = currentQty;
-        quantitiesInPopup[sizeName] = currentQty;
+        quantitiesInPopup[size.name] = currentQty;
       }
     } else if (target.closest('#confirm-selection-btn')) {
       if (!globalCart[locationId]) {
@@ -386,8 +983,8 @@ function addCategoryDetailListeners(category, locationData) {
       }
       updateMainLocationFooter();
       hideModal('category-detail-modal');
-      if (bookingState.step === 2) {
-        updateBookingSummary();
+      if (bookingState.step === 1 || bookingState.step === 2) {
+        updateBookingSummary(bookingState.step === 1);
       }
     } else if (target.closest('.close-modal-btn')) {
       hideModal('category-detail-modal');
@@ -395,653 +992,147 @@ function addCategoryDetailListeners(category, locationData) {
   });
 }
 
-export function renderLocationDetailModal(locationData, reviews) {
-  const locationId = locationData.id;
-  const reviewsForLocation = reviews?.[locationId] ? Object.values(reviews[locationId]) : [];
-  const cheapestPrice = getCheapestPrice(locationData);
-  const content = `
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3 class="modal-title">${locationData.name}</h3>
-        <button class="close-modal-btn" data-modal-id="location-detail-modal">&times;</button>
-      </div>
-      <div class="modal-body bg-neutral-50 overflow-y-auto">
-        <div class="location-detail-image" style="background-image: url('${locationData.imageUrl}');"></div>
-        <div class="location-detail-card">
-          <div class="location-detail-info">
-            <p class="location-detail-address">${locationData.address}</p>
-            <span class="location-status-badge ${locationData.status === 'Open' ? 'open' : 'closed'}">${locationData.status}</span>
-          </div>
-          <p class="location-detail-description">${locationData.description || ''}</p>
-        </div>
-        <h4 class="mt-1-5 mb-0-75">Features</h4>
-        <div class="location-features-list">
-          ${(locationData.features || []).map(f => `<span class="feature-tag"><i class="${f.icon}"></i><span>${f.name}</span></span>`).join('')}
-        </div>
-        <h4 class="mt-1-5 mb-0-75">Opening Hours</h4>
-        <div class="location-detail-card">${renderSchedules(locationData.schedules)}</div>
-        <div id="available-storage-section">
-          <h4 class="mt-1-5 mb-0-75">Available Storage</h4>
-          ${renderCategorySlider(locationData.categories)}
-        </div>
-        <h4 class="mt-1-5 mb-0-75">Reviews (${reviewsForLocation.length})</h4>
-        <div class="location-detail-card p-0-5">
-          ${reviewsForLocation.length > 0 ? reviewsForLocation.map(r => `<div class="review-item"><div class="review-header"><h5 class="font-semibold">${r.name}</h5><div class="star-rating">${getStarRatingHTML(r.rating)}</div></div><p class="review-comment">${r.comment}</p></div>`).join('') : '<p class="text-center text-gray-500 p-1">No reviews yet.</p>'}
-        </div>
-      </div>
-      <div class="modal-footer sticky-footer">
-        <div class="sp-start-price">
-          Starts from <strong class="text-xl text-dark-secondary">$${cheapestPrice !== Infinity ? cheapestPrice.toFixed(2) : 'N/A'}</strong>
-        </div>
-        <button data-action="scroll-to-storage" class="btn btn-primary">Book a Space</button>
-      </div>
-    </div>
-  `;
-  showModal('location-detail-modal', content);
-  addDetailModalListeners(locationData);
-}
-
-export function addDetailModalListeners(locationData) {
-  const modal = document.getElementById('location-detail-modal');
-  if (!modal) return;
-  modal.addEventListener('click', e => {
-    const target = e.target;
-    const scrollBtn = target.closest('[data-action="scroll-to-storage"]');
-    const viewCategoryBtn = target.closest('[data-action="view-category-detail"]');
-    const closeModalBtn = target.closest('.close-modal-btn');
-    const startBookingBtn = target.closest('[data-action="start-booking-flow"]');
-    if (scrollBtn) {
-      modal.querySelector('#available-storage-section')?.scrollIntoView({ behavior: 'smooth' });
-    } else if (viewCategoryBtn) {
-      const categoryIndex = viewCategoryBtn.dataset.categoryIndex;
-      const category = locationData.categories[categoryIndex];
-      if (category) {
-        renderCategoryDetailPopup(category, locationData);
-      }
-    } else if (startBookingBtn) {
-      hideModal('location-detail-modal');
-      renderBookingFlowModal();
-    } else if (closeModalBtn) {
-      hideModal('location-detail-modal');
-    }
-  });
-}
-
-function renderBookingStep() {
-    const user = getCurrentUser();
-    let content = '';
-    switch (bookingState.step) {
-        case 1: content = getDurationStepHTML(); break;
-        case 2: content = getServiceStepHTML(); break;
-        case 3: content = getConfirmationStepHTML(user); break;
-        default:
-            console.error("Invalid booking step:", bookingState.step);
-            hideModal('booking-flow-modal');
-            return;
-    }
-    const modalContent = document.querySelector('#booking-flow-modal .modal-content');
-    if (modalContent) {
-        modalContent.innerHTML = content;
-        addStepLogic();
-    }
-}
-
-async function updateBookingSummary() {
-    const summaryList = document.getElementById('sp-editable-summary-list');
-    const priceSummary = document.getElementById('total-price-summary');
-    const serviceDetails = document.getElementById('sp-service-summary-details');
-    const totals = await calculateBookingTotals();
-    let itemsSummaryHTML = '';
-    Object.values(bookingState.locationsToBook).forEach(loc => {
-        loc.items.forEach(item => {
-            itemsSummaryHTML += `
-                <div class="sp-summary-item-card">
-                    <div>
-                        <p class="font-semibold">${item.size.name} (${item.quantity}x)</p>
-                        <p class="text-sm text-gray-600">at ${loc.locationData.name}</p>
-                        <p class="mt-0-5 text-sm text-primary-500 font-bold">${bookingState.duration || 'Not selected'}</p>
-                    </div>
-                    <button type="button" class="btn btn-sm btn-outline-primary" data-action="edit-summary-item" data-location-id="${loc.locationData.id}" data-category-name="${item.category.name}">Edit</button>
-                </div>`;
-        });
-    });
-    if (summaryList) summaryList.innerHTML = itemsSummaryHTML;
-    if (priceSummary) priceSummary.textContent = `Total: $${totals.finalPrice.toFixed(2)}`;
-    if (serviceDetails) {
-        if (bookingState.serviceType === 'pickup' && bookingState.pickupAddress) {
-            serviceDetails.innerHTML = `
-                <p class="no-margin">Pickup Service selected.</p>
-                <p class="no-margin">Pickup Address: ${bookingState.pickupAddress}</p>
-                <p class="no-margin">Distance: ${(bookingState.pickupDistance || 0).toFixed(2)} km</p>
-                <p class="no-margin">Pickup Fee: $${(bookingState.pickupFee || 0).toFixed(2)}</p>
-            `;
-            serviceDetails.style.display = 'block';
-        } else if (bookingState.serviceType === 'pickup') {
-            serviceDetails.innerHTML = `<p class="no-margin">Pickup Service selected. Please add your pickup details.</p>`;
-            serviceDetails.style.display = 'block';
-        } else {
-            serviceDetails.style.display = 'none';
-        }
-    }
-}
-
-function getDurationStepHTML() {
-  const firstLocationId = Object.keys(bookingState.locationsToBook)[0];
-  const firstItem = bookingState.locationsToBook[firstLocationId].items[0];
-  const sharedRates = firstItem.size.rates;
-  const startDate = new Date(bookingState.startDate);
-  const isDaily = bookingState.duration && bookingState.duration.toLowerCase() === 'daily';
-  const endDateHTML = isDaily 
-      ? `<input type="date" id="end-date" class="sp-input-field" value="${new Date(bookingState.endDate).toISOString().split('T')[0]}">` 
-      : `<span class="text-primary-500 font-bold">${formatDateTime(bookingState.endDate)}</span>`;
+function renderSchedules(schedules) {
+  if (!schedules) return '<p>Opening hours not available.</p>';
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   return `
-    <div class="sp-bookings-flow-header">
-      <h3 class="modal-title">1. Select Duration & Date</h3>
-      <button class="close-modal-btn">&times;</button>
-    </div>
-    <div class="sp-bookings-flow-body">
-      <div class="sp-bookings-flow-input-group">
-        <label>Start Date & Time</label>
-        <div class="flex-container">
-          <input type="date" id="start-date" class="sp-input-field" value="${startDate.toISOString().split('T')[0]}">
-          <input type="time" id="start-time" class="sp-input-field" value="${startDate.toTimeString().slice(0, 5)}">
-        </div>
-      </div>
-      <div class="sp-bookings-flow-input-group">
-        <label>Duration</label>
-        <div class="sp-duration-options">
-          ${sharedRates.map(rate => `
-            <button type="button" class="sp-duration-btn ${bookingState.duration === rate.duration ? 'active' : ''}" data-duration="${rate.duration}">
-              <span>${rate.duration}</span><br><span class="text-sm text-gray-600">$${rate.price.toFixed(2)}</span>
-            </button>
-          `).join('')}
-        </div>
-      </div>
-      <div class="sp-bookings-flow-input-group">
-        <label>End Date & Time</label>
-        <div class="sp-readonly-field">
-            <div id="end-date-container">${endDateHTML}</div>
-            <p class="no-margin text-sm text-gray-600 mt-0-5" id="duration-info-text"></p>
-        </div>
-      </div>
-      <div id="booking-price-summary" class="sp-total-price">Total: $0.00</div>
-    </div>
-    <div class="sp-bookings-flow-footer">
-      <button id="next-step-btn" class="btn btn-primary btn-full" disabled>Next</button>
-    </div>
+    <table class="opening-hours-table">
+      <tbody>
+        ${days.map(day => `
+          <tr class="border-bottom">
+            <td class="font-semibold">${day}</td>
+            <td class="text-right">
+              ${(schedules[day] && schedules[day].open_hour !== 'Closed')
+                ? `${schedules[day].open_hour} - ${schedules[day].close_hour}`
+                : `<span class="closed-day">Closed</span>`}
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
   `;
 }
 
-// --- START: MODIFIED getConfirmationStepHTML ---
-function getConfirmationStepHTML(user) {
-  const summary = bookingState;
-  const totals = {
-      subTotal: summary.subTotal || 0,
-      pickupFee: summary.pickupFee || 0,
-      finalPrice: summary.totalPrice || 0,
-      discountAmount: (summary.subTotal + summary.pickupFee) - summary.totalPrice
-  };
-  const itemsSummary = Object.values(summary.locationsToBook).flatMap(loc =>
-    loc.items.map(item => `<p class="no-margin"><b>Item:</b> ${item.size.name} (${item.quantity}x) at ${loc.locationData.name} - ${summary.duration}</p>`)
-  ).join('');
-  const getPriceDetailsHTML = (t) => {
-    const originalPrice = t.finalPrice + t.discountAmount;
-    if (t.discountAmount > 0) {
-        return `
-            <div class="sp-price-details">Subtotal: $${t.subTotal.toFixed(2)}</div>
-            ${t.pickupFee > 0 ? `<div class="sp-price-details">Pickup Fee: $${t.pickupFee.toFixed(2)}</div>` : ''}
-            <div class="sp-price-details sp-original-price-strikethrough">Original Total: <s>$${originalPrice.toFixed(2)}</s></div>
-            <div class="sp-price-details sp-discount-text">Discount: -$${t.discountAmount.toFixed(2)}</div>
-            <div id="total-price-summary" class="sp-total-price">Total: $${t.finalPrice.toFixed(2)}</div>
-        `;
-    }
-    return `
-        <div class="sp-price-details">Subtotal: $${t.subTotal.toFixed(2)}</div>
-        ${t.pickupFee > 0 ? `<div class="sp-price-details">Pickup Fee: $${t.pickupFee.toFixed(2)}</div>` : ''}
-        <div id="total-price-summary" class="sp-total-price">Total: $${t.finalPrice.toFixed(2)}</div>
-    `;
-  }
-  return `
-    <div class="sp-bookings-flow-header">
-      <button class="back-step-btn">&larr;</button>
-      <h3 class="modal-title">3. Confirmation & Payment</h3>
-      <button class="close-modal-btn">&times;</button>
-    </div>
-    <div class="sp-bookings-flow-body text-sm overflow-y-auto">
-      <h4 class="mt-0 mb-1">Booking Summary</h4>
-      <div class="sp-confirmation-summary">
-        ${itemsSummary}
-        <p class="no-margin"><b>From:</b> ${formatDateTime(summary.startDate)}</p>
-        <p class="no-margin"><b>To:</b> ${formatDateTime(summary.endDate)}</p>
-      </div>
-      <div class="sp-confirmation-summary mt-1">
-        <p class="no-margin"><b>Service:</b> ${summary.serviceType === 'pickup' ? 'Pickup Service' : 'Self Drop-off'}</p>
-        ${summary.serviceType === 'pickup' ? `<p class="no-margin"><b>Pickup Address:</b> ${summary.pickupAddress || 'Not set'}</p>` : ''}
-      </div>
-      <div class="sp-bookings-flow-input-group mt-1">
-        <label>Voucher Code</label>
-        <div class="flex-container">
-          <input type="text" id="voucher-code-input" class="sp-input-field" placeholder="Enter voucher code" value="${bookingState.voucher?.code || ''}">
-          <button type="button" id="apply-voucher-btn" class="btn btn-primary">Apply</button>
-        </div>
-        <div id="voucher-message" class="text-sm mt-0-5"></div>
-      </div>
-      <div class="sp-bookings-flow-input-group mt-1">
-        <label>Notes (Optional)</label>
-        <textarea id="booking-notes" class="sp-input-field" placeholder="Add any special instructions...">${bookingState.notes || ''}</textarea>
-      </div>
-      <div id="total-price-container" class="sp-total-price-container">
-          ${getPriceDetailsHTML(totals)}
-          <div id="total-price-summary-idr" class="sp-total-price-idr text-left text-sm font-semibold text-gray-700"></div>
-          <div id="currency-conversion-status" class="text-xs text-gray-500 mt-0-5 mb-1"></div>
-      </div>
-      ${user ? `
-        <h4 class="mt-1-5 mb-1">Payment Method</h4>
-        <div class="sp-payment-options">
-          <label class="sp-payment-option"><input type="radio" name="paymentMethod" value="on_site" ${bookingState.paymentMethod === 'on_site' ? 'checked' : ''}><span>Pay On-Site</span></label>
-          <label class="sp-payment-option"><input type="radio" name="paymentMethod" value="online" ${bookingState.paymentMethod === 'online' ? 'checked' : ''}><span>Pay Online (iPaymu)</span></label>
-        </div>` : ''}
-    </div>
-    <div class="sp-bookings-flow-footer">
-      ${user ? '<button id="confirm-book-btn" class="btn btn-success btn-full">Confirm & Book</button>' : '<button id="login-to-book-btn" class="btn btn-primary btn-full">Login to Complete Booking</button>'}
-    </div>
-  `;
-}
-// --- END: MODIFIED getConfirmationStepHTML ---
+async function renderAddressModal(addressType) {
+  const isPickup = addressType === 'pickup';
+  const currentAddress = isPickup ? bookingState.pickupAddress : bookingState.deliveryAddress;
+  const currentPhone = isPickup ? bookingState.contactNumber : bookingState.deliveryContactNumber;
 
-async function handleConfirmBooking() {
-  const user = getCurrentUser();
-  if (!user) {
-    showToast('You must be logged in to book.', 'error');
-    return;
-  }
-  const paymentMethod = document.querySelector('input[name="paymentMethod"]:checked')?.value;
-  if (!paymentMethod) {
-      showToast("Please select a payment method.", "error");
-      return;
-  }
-  if (bookingState.serviceType === 'pickup' && (!bookingState.pickupAddress || !bookingState.geolocation)) {
-      showToast("Please provide your pickup address details.", "error");
-      renderPickupDetailsModal();
-      return;
-  }
-  bookingState.notes = document.getElementById('booking-notes')?.value.trim() || '';
-  showLoader(true, 'Creating your booking...');
-  try {
-    const userData = await fetchUserData(user.uid);
-    const totals = await calculateBookingTotals();
-    const cartSubtotal = totals.subTotal;
-    const orderId = db.ref('bookings').push().key;
-    const bookingsToCreate = [];
-    Object.values(bookingState.locationsToBook).forEach(loc => {
-        loc.items.forEach(item => {
-            const isDaily = bookingState.duration.toLowerCase() === 'daily';
-            const rateInfo = isDaily ? item.size.rates.find(r => r.duration.toLowerCase() === 'daily') : item.size.rates.find(r => r.duration === bookingState.duration);
-            if (!rateInfo) return;
-            const timeDiff = bookingState.endDate - bookingState.startDate;
-            const totalDays = Math.max(1, Math.ceil(timeDiff / (1000 * 3600 * 24)));
-            const itemSubtotal = isDaily ? item.quantity * rateInfo.price * totalDays : item.quantity * rateInfo.price;
-            const proportion = cartSubtotal > 0 ? itemSubtotal / cartSubtotal : 1 / totalItems;
-            const itemPickupFee = (totals.pickupFee || 0) * proportion;
-            const itemDiscount = (totals.discountAmount || 0) * proportion;
-            const finalItemPrice = itemSubtotal + itemPickupFee - itemDiscount;
-            const newBookingData = {
-                orderId, userId: user.uid, locationId: loc.locationData.id, locationName: loc.locationData.name,
-                category: item.category.name, storageType: item.size.name, quantity: item.quantity,
-                duration: bookingState.duration, totalPrice: finalItemPrice, startDate: bookingState.startDate,
-                endDate: bookingState.endDate, serviceType: bookingState.serviceType, paymentMethod,
-                paymentStatus: paymentMethod === 'online' ? 'pending' : 'unpaid_on_site',
-                bookingStatus: 'active', notes: bookingState.notes,
-            };
-            if (bookingState.voucher) {
-                newBookingData.voucherCode = bookingState.voucher.code;
-                newBookingData.discountApplied = bookingState.voucher.discount_percent;
-            }
-            if (bookingState.serviceType === 'pickup') {
-                newBookingData.pickupAddress = bookingState.pickupAddress || 'Not specified';
-                newBookingData.geolocation = bookingState.geolocation || null;
-                newBookingData.pickupFee = itemPickupFee;
-                newBookingData.pickupDistance = bookingState.pickupDistance || 0;
-            }
-            bookingsToCreate.push(newBookingData);
-        });
-    });
-    for (const booking of bookingsToCreate) {
-        await createNewBooking(booking);
-    }
-    globalCart = {};
-    bookingState = {};
-    if (paymentMethod === 'online') {
-      const paymentData = {
-        id: orderId, totalPrice: totals.finalPrice,
-        userEmail: userData?.email || 'customer@example.com', userName: userData?.name || 'Customer'
-      };
-      await createIpaymuInvoice(paymentData);
-    } else {
-      showLoader(false);
-      showToast('Booking created successfully!', 'success');
-      hideModal('booking-flow-modal');
-      window.location.hash = '#/bookings';
-    }
-  } catch (error) {
-    showLoader(false);
-    showToast('Failed to create booking. Please try again.', 'error');
-    console.error("Booking creation error:", error);
-  }
-}
-
-function addDurationStepLogic() {
-    const modalContent = document.querySelector('#booking-flow-modal .modal-content');
-    if (!modalContent) return;
-    const nextBtn = document.getElementById('next-step-btn');
-    const priceSummary = document.getElementById('booking-price-summary');
-    const durationInfoText = document.getElementById('duration-info-text');
-    const updateAndValidate = async () => {
-        const startDateInput = document.getElementById('start-date');
-        const startTimeInput = document.getElementById('start-time');
-        const endDateInput = document.getElementById('end-date');
-        bookingState.startDate = new Date(`${startDateInput.value}T${startTimeInput.value}`).getTime();
-        let newEndDate;
-        const durationType = bookingState.duration?.toLowerCase();
-        if (durationType === 'daily' && endDateInput) {
-            const endDateValue = new Date(`${endDateInput.value}T${startTimeInput.value}`);
-            if (endDateValue.getTime() < bookingState.startDate) {
-                endDateValue.setDate(new Date(bookingState.startDate).getDate());
-                endDateInput.value = endDateValue.toISOString().split('T')[0];
-            }
-            newEndDate = endDateValue;
-        } else {
-            newEndDate = new Date(bookingState.startDate);
-            switch (durationType) {
-                case 'weekly': newEndDate.setDate(newEndDate.getDate() + 7); break;
-                case 'monthly': newEndDate.setMonth(newEndDate.getMonth() + 1); break;
-                default:
-                    const days = parseInt(durationType);
-                    if (!isNaN(days)) newEndDate.setDate(newEndDate.getDate() + days);
-                    break;
-            }
-        }
-        bookingState.endDate = newEndDate.getTime();
-        const endDateContainer = document.getElementById('end-date-container');
-        if (durationType !== 'daily' && endDateContainer) {
-            endDateContainer.innerHTML = `<span class="text-primary-500 font-bold">${formatDateTime(bookingState.endDate)}</span>`;
-        }
-        if (bookingState.endDate >= bookingState.startDate) {
-            const timeDiff = bookingState.endDate - bookingState.startDate;
-            const totalDays = Math.max(1, Math.ceil(timeDiff / (1000 * 3600 * 24)));
-            if (durationInfoText) {
-                durationInfoText.textContent = `Total duration: ${totalDays} day(s)`;
-            }
-        } else {
-             if (durationInfoText) durationInfoText.textContent = '';
-        }
-        const totals = await calculateBookingTotals();
-        if (priceSummary) priceSummary.textContent = `Total: $${totals.finalPrice.toFixed(2)}`;
-        const isFormValid = bookingState.duration && bookingState.endDate >= bookingState.startDate;
-        if (nextBtn) {
-            nextBtn.disabled = !isFormValid;
-            nextBtn.style.opacity = isFormValid ? '1' : '0.5';
-        }
-    };
-    modalContent.addEventListener('change', e => {
-        if (e.target.matches('#start-date, #start-time, #end-date')) {
-            updateAndValidate();
-        }
-    });
-    modalContent.querySelectorAll('.sp-duration-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            modalContent.querySelectorAll('.sp-duration-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            bookingState.duration = btn.dataset.duration;
-            renderBookingStep(); 
-        });
-    });
-    if (bookingState.duration) updateAndValidate();
-}
-
-// --- START: MODIFIED addConfirmationStepLogic ---
-async function updateConfirmationSummary() {
-    const totals = await calculateBookingTotals();
-    const priceSummary = document.getElementById('total-price-summary');
-    if (priceSummary) {
-        priceSummary.textContent = `Total: $${totals.finalPrice.toFixed(2)}`;
-    }
-    if (bookingState.totalPrice > 0) {
-        convertCurrencyAndUpdateUI(bookingState.totalPrice);
-    } else {
-        const idrPriceElement = document.getElementById('total-price-summary-idr');
-        const statusElement = document.getElementById('currency-conversion-status');
-        if(idrPriceElement) idrPriceElement.textContent = '';
-        if(statusElement) statusElement.textContent = '';
-    }
-}
-
-function addConfirmationStepLogic() {
-    const applyVoucherBtn = document.getElementById('apply-voucher-btn');
-    const voucherInput = document.getElementById('voucher-code-input');
-    const voucherMessage = document.getElementById('voucher-message');
-
-    // Initial call to load summary and start conversion
-    updateConfirmationSummary();
-
-    applyVoucherBtn.addEventListener('click', async () => {
-        const voucherCode = voucherInput.value.trim().toUpperCase();
-        if (!voucherCode) {
-            voucherMessage.innerHTML = `<span class="text-danger-500">Please enter a voucher code.</span>`;
-            return;
-        }
-        const voucherSnapshot = await db.ref(`vouchers/${voucherCode}`).once('value');
-        const voucherData = voucherSnapshot.val();
-        if (voucherData?.active) {
-            bookingState.voucher = voucherData;
-            voucherMessage.innerHTML = `<span class="text-success-500">Voucher '${voucherCode}' applied!</span>`;
-        } else {
-            delete bookingState.voucher;
-            voucherMessage.innerHTML = `<span class="text-danger-500">Invalid or expired voucher code.</span>`;
-        }
-        // Refresh the step to recalculate totals and update the display
-        renderBookingStep(); 
-    });
-    document.querySelectorAll('.sp-payment-option input').forEach(radio => {
-        radio.addEventListener('change', e => bookingState.paymentMethod = e.target.value);
-    });
-    document.getElementById('booking-notes')?.addEventListener('input', e => bookingState.notes = e.target.value);
-}
-// --- END: MODIFIED addConfirmationStepLogic ---
-
-function addStepLogic() {
-    switch(bookingState.step) {
-        case 1: addDurationStepLogic(); break;
-        case 2: addServiceStepLogic(); break;
-        case 3: addConfirmationStepLogic(); break;
-    }
-}
-
-async function renderPickupDetailsModal() {
   const content = `
-    <div id="sp-pickup-modal-content" class="sp-pickup-modal-content">
+    <div id="sp-address-modal-content" class="sp-pickup-modal-content">
       <div class="sp-pickup-modal-header">
-        <h3 class="modal-title">Pickup Details</h3>
+        <h3 class="modal-title">Set ${isPickup ? 'Pickup' : 'Delivery'} Details</h3>
         <button class="sp-pickup-close-btn">&times;</button>
       </div>
       <div class="sp-pickup-modal-body">
         <div class="sp-bookings-flow-input-group">
-          <label>Pickup Address</label>
-          <input type="text" id="sp-pickup-address" class="sp-input-field" value="${bookingState.pickupAddress || ''}" placeholder="Enter your address">
+          <label>${isPickup ? 'Pickup' : 'Delivery'} Address</label>
+          <input type="text" id="sp-address-input" class="sp-input-field" value="${currentAddress || ''}" placeholder="Enter your address">
         </div>
-        <button id="sp-use-my-location-btn" class="sp-pickup-btn"><i class="fas fa-crosshairs"></i> Use My Location</button>
-        <div class="sp-bookings-flow-input-group mt-1-5">
-          <label>Contact Number</label>
-          <input type="tel" id="sp-contact-number" class="sp-input-field" value="${bookingState.contactNumber || ''}" placeholder="Enter phone number">
+        <div class="sp-bookings-flow-input-group mt-1">
+          <label>Contact Phone Number</label>
+          <input type="tel" id="sp-phone-input" class="sp-input-field" value="${currentPhone || ''}" placeholder="e.g., 08123456789">
         </div>
-        <div id="sp-pickup-map" class="sp-map-container" style="height: 250px; width: 100%; background-color: #e0e0e0; margin-top: 1rem;"></div>
+        <div id="sp-address-map" class="sp-map-container" style="height: 200px; width: 100%; background-color: #e0e0e0; margin-top: 1rem;"></div>
       </div>
       <div class="sp-pickup-modal-footer">
-        <button id="sp-confirm-pickup-btn" class="sp-pickup-btn-primary" disabled>Confirm Pickup Details</button>
+        <button id="sp-confirm-address-btn" class="sp-pickup-btn-primary" disabled>Confirm Details</button>
       </div>
     </div>
   `;
-  showModal('sp-pickup-modal', content, true);
-  setTimeout(addPickupDetailsModalLogic, 100);
+  showModal('sp-address-modal', content, true);
+  setTimeout(() => addAddressModalLogic(addressType), 100);
 }
 
-function addPickupDetailsModalLogic() {
-  const modal = document.getElementById('sp-pickup-modal');
-  if(!modal) return;
-  if (!window.isGoogleMapsReady) {
-    console.error("Google Maps script is not loaded yet.");
-    showToast("Map feature is unavailable. Please try again later.", "error");
-    return;
-  }
-  const confirmBtn = document.getElementById('sp-confirm-pickup-btn');
-  const pickupAddressInput = document.getElementById('sp-pickup-address');
-  const contactNumberInput = document.getElementById('sp-contact-number');
-  if (!mapsApiStyleInjected) {
-    const style = document.createElement('style');
-    style.textContent = `.pac-container { z-index: 10000 !important; }`;
-    document.head.appendChild(style);
-    mapsApiStyleInjected = true;
-  }
-  const validateInputs = () => {
-    const isFormValid = pickupAddressInput.value.trim() && contactNumberInput.value.trim() && bookingState.geolocation;
-    if(confirmBtn) {
-        confirmBtn.disabled = !isFormValid;
-        confirmBtn.style.opacity = isFormValid ? '1' : '0.5';
+function addAddressModalLogic(addressType) {
+    const modal = document.getElementById('sp-address-modal');
+    if (!modal || !window.isGoogleMapsReady) {
+        showToast("Map feature is unavailable.", "error");
+        return;
     }
-  };
-  const handleAddressUpdate = (address, location) => {
-    pickupAddressInput.value = address;
-    bookingState.pickupAddress = address;
-    bookingState.geolocation = { latitude: location.lat(), longitude: location.lng() };
-    validateInputs();
-  };
-  pickupAddressInput.addEventListener('input', () => {
-      bookingState.pickupAddress = pickupAddressInput.value;
-      validateInputs();
-  });
-  contactNumberInput.addEventListener('input', () => {
-      bookingState.contactNumber = contactNumberInput.value;
-      validateInputs();
-  });
-  const mapCanvas = document.getElementById("sp-pickup-map");
-  const firstLocationId = Object.keys(bookingState.locationsToBook)[0];
-  const locationData = bookingState.locationsToBook[firstLocationId].locationData;
-  const initialPosition = bookingState.geolocation 
-      ? { lat: bookingState.geolocation.latitude, lng: bookingState.geolocation.longitude } 
-      : { lat: locationData.geolocation.latitude, lng: locationData.geolocation.longitude };
-  mapInstance = new google.maps.Map(mapCanvas, { center: initialPosition, zoom: 12, streetViewControl: false, mapTypeControl: false });
-  google.maps.event.trigger(mapInstance, 'resize');
-  mapInstance.setCenter(initialPosition);
-  mapMarker = new google.maps.Marker({ map: mapInstance, position: initialPosition, draggable: true });
-  mapMarker.addListener('dragend', () => {
-    const newPosition = mapMarker.getPosition();
-    if (!geocoder) geocoder = new google.maps.Geocoder();
-    geocoder.geocode({ 'location': newPosition }, (results, status) => {
-      if (status === 'OK' && results[0]) {
-        handleAddressUpdate(results[0].formatted_address, newPosition);
-        showToast('Address updated from marker.', 'info');
-      } else {
-        showToast('Could not find address for location.', 'error');
-      }
-    });
-  });
-  pickupAutocomplete = new google.maps.places.Autocomplete(pickupAddressInput);
-  pickupAutocomplete.bindTo('bounds', mapInstance);
-  pickupAutocomplete.addListener('place_changed', () => {
-    const place = pickupAutocomplete.getPlace();
-    if (place.geometry) {
-      mapInstance.setCenter(place.geometry.location);
-      mapInstance.setZoom(17);
-      mapMarker.setPosition(place.geometry.location);
-      handleAddressUpdate(place.formatted_address || place.name, place.geometry.location);
-    } else {
-      showToast('Address not found.', 'error');
-    }
-  });
-  document.getElementById('sp-use-my-location-btn').addEventListener('click', () => {
-    if (navigator.geolocation) {
-      showLoader(true, 'Detecting location...');
-      navigator.geolocation.getCurrentPosition(pos => {
-        const userGoogleLocation = new google.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
-        mapInstance.setCenter(userGoogleLocation);
-        mapInstance.setZoom(17);
-        mapMarker.setPosition(userGoogleLocation);
-        if (!geocoder) geocoder = new google.maps.Geocoder();
-        geocoder.geocode({ 'location': userGoogleLocation }, (results, status) => {
-          showLoader(false);
-          if (status === 'OK' && results[0]) {
-            handleAddressUpdate(results[0].formatted_address, userGoogleLocation);
-            showToast('Location updated.', 'success');
-          } else {
-            showToast('Could not find address for your location.', 'error');
-          }
-        });
-      }, () => {
-        showToast('Could not detect location.', 'error');
-        showLoader(false);
-      });
-    } else {
-        showToast('Geolocation is not supported by this browser.', 'error');
-    }
-  });
-  validateInputs();
-  confirmBtn.addEventListener('click', async () => {
-    hideModal('sp-pickup-modal');
-    await updateBookingSummary();
-    renderBookingStep();
-  });
-  modal.querySelector('.sp-pickup-close-btn').addEventListener('click', () => {
-    hideModal('sp-pickup-modal');
-    bookingState.step = 2;
-    renderBookingStep();
-  });
-}
+    const confirmBtn = document.getElementById('sp-confirm-address-btn');
+    const addressInput = document.getElementById('sp-address-input');
+    const phoneInput = document.getElementById('sp-phone-input');
+    let tempGeolocation = null;
 
-export function renderBookingFlowModal(restoredState = null) {
-  if (restoredState) {
-    bookingState = { ...restoredState };
-  } else if (Object.keys(globalCart).length > 0) {
-    const startDate = new Date();
-    startDate.setHours(startDate.getHours() + 1, 0, 0, 0);
-    const endDate = new Date(startDate);
-    endDate.setDate(endDate.getDate() + 1);
-    bookingState = {
-      step: 1, startDate: startDate.getTime(), endDate: endDate.getTime(), duration: null,
-      totalPrice: 0, totalItems: 0, locationsToBook: globalCart, paymentMethod: 'on_site',
-      serviceType: 'self-dropoff', notes: ''
-    };
-  } else {
-    showToast('Please select a storage unit to book.', 'error');
-    return;
-  }
-  showModal('booking-flow-modal', `<div class="modal-content"><div class="loader"></div></div>`);
-  renderBookingStep();
-  const modal = document.getElementById('booking-flow-modal');
-  modal.addEventListener('click', e => {
-    const target = e.target;
-    if (target.closest('.close-modal-btn')) {
-      hideModal('booking-flow-modal');
-    } else if (target.closest('.back-step-btn')) {
-      if (bookingState.step > 1) {
-        bookingState.step--;
-        renderBookingStep();
-      }
-    } else if (target.closest('#next-step-btn')) {
-        if (bookingState.step === 2 && bookingState.serviceType === 'pickup') {
-            bookingState.step++; 
-            renderPickupDetailsModal();
-        } else if (bookingState.step < 3) {
-            bookingState.step++;
-            renderBookingStep();
+    if (!mapsApiStyleInjected) {
+        const style = document.createElement('style');
+        style.textContent = `.pac-container { z-index: 10000 !important; }`;
+        document.head.appendChild(style);
+        mapsApiStyleInjected = true;
+    }
+    
+    const validateInput = () => {
+        const isValid = addressInput.value.trim() && phoneInput.value.trim() && tempGeolocation;
+        if(confirmBtn) {
+            confirmBtn.disabled = !isValid;
+            confirmBtn.style.opacity = isValid ? '1' : '0.5';
         }
-    } else if (target.closest('#login-to-book-btn')) {
-        sessionStorage.setItem('pendingBooking', JSON.stringify(bookingState));
-        hideModal('booking-flow-modal');
-        window.location.hash = '#/auth';
-    } else if (target.closest('#confirm-book-btn')) {
-        handleConfirmBooking();
+    };
+
+    addressInput.addEventListener('input', validateInput);
+    phoneInput.addEventListener('input', validateInput);
+
+    const handleAddressUpdate = (address, location) => {
+        addressInput.value = address;
+        tempGeolocation = { latitude: location.lat(), longitude: location.lng() };
+        validateInput();
+    };
+
+    const firstLocationId = Object.keys(bookingState.locationsToBook)[0];
+    const locationData = bookingState.locationsToBook[firstLocationId].locationData;
+    let initialPosition;
+    if (addressType === 'pickup' && bookingState.pickupGeolocation) {
+        initialPosition = { lat: bookingState.pickupGeolocation.latitude, lng: bookingState.pickupGeolocation.longitude };
+    } else if (addressType === 'delivery' && bookingState.deliveryGeolocation) {
+        initialPosition = { lat: bookingState.deliveryGeolocation.latitude, lng: bookingState.deliveryGeolocation.longitude };
+    } else {
+        initialPosition = { lat: locationData.geolocation.latitude, lng: locationData.geolocation.longitude };
     }
-  });
+    if (initialPosition) tempGeolocation = { latitude: initialPosition.lat, longitude: initialPosition.lng };
+
+    mapInstance = new google.maps.Map(document.getElementById("sp-address-map"), { center: initialPosition, zoom: 12, streetViewControl: false, mapTypeControl: false });
+    mapMarker = new google.maps.Marker({ map: mapInstance, position: initialPosition, draggable: true });
+    
+    if (!geocoder) geocoder = new google.maps.Geocoder();
+    
+    mapMarker.addListener('dragend', () => {
+        const newPosition = mapMarker.getPosition();
+        geocoder.geocode({ 'location': newPosition }, (results, status) => {
+            if (status === 'OK' && results[0]) {
+                handleAddressUpdate(results[0].formatted_address, newPosition);
+            }
+        });
+    });
+
+    autocomplete = new google.maps.places.Autocomplete(addressInput);
+    autocomplete.bindTo('bounds', mapInstance);
+    autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+        if (place.geometry) {
+            mapInstance.setCenter(place.geometry.location);
+            mapInstance.setZoom(17);
+            mapMarker.setPosition(place.geometry.location);
+            handleAddressUpdate(place.formatted_address || place.name, place.geometry.location);
+        }
+    });
+    
+    confirmBtn.addEventListener('click', () => {
+        if (addressType === 'pickup') {
+            bookingState.pickupAddress = addressInput.value;
+            bookingState.contactNumber = phoneInput.value;
+            bookingState.pickupGeolocation = tempGeolocation;
+        } else {
+            bookingState.deliveryAddress = addressInput.value;
+            bookingState.deliveryContactNumber = phoneInput.value;
+            bookingState.deliveryGeolocation = tempGeolocation;
+        }
+        hideModal('sp-address-modal');
+        renderBookingStep(); 
+    });
+    
+    modal.querySelector('.sp-pickup-close-btn').addEventListener('click', () => hideModal('sp-address-modal'));
+    validateInput();
 }
 
 export async function renderInvoiceViewer(booking) {
@@ -1066,7 +1157,7 @@ export async function renderInvoiceViewer(booking) {
     }
 }
 
-function generateInvoiceHtml(booking, userData) {
+export function generateInvoiceHtml(booking, userData) {
     const invoiceNumber = `SP-${booking.id.slice(-8).toUpperCase()}`;
     const base64Logo = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=`; 
     return `
@@ -1121,14 +1212,8 @@ export async function renderReviewModal(booking) {
     modal.querySelector('#submit-review-btn').addEventListener('click', async () => {
         const rating = parseInt(ratingInput.value);
         const comment = modal.querySelector('#review-comment').value.trim();
-        if (rating === 0) {
-            showToast('Please provide a star rating.', 'error');
-            return;
-        }
-        if (comment.length < 10) {
-            showToast('Please write a more detailed review.', 'error');
-            return;
-        }
+        if (rating === 0) { showToast('Please provide a star rating.', 'error'); return; }
+        if (comment.length < 10) { showToast('Please write a more detailed review.', 'error'); return; }
         showLoader(true, 'Submitting your review...');
         try {
             const user = getCurrentUser();
@@ -1147,55 +1232,98 @@ export async function renderReviewModal(booking) {
     });
 }
 
-export async function renderRequestPickupModal(booking) {
-    const modalId = 'request-pickup-modal';
-    const now = new Date();
-    const minPickupTime = new Date(Math.max(now.getTime(), booking.createdAt) + 3 * 60 * 60 * 1000);
-    const minTime = minPickupTime.toTimeString().slice(0, 5);
-    const content = `
-        <div class="modal-header">
-            <h3>Request Pickup Time</h3>
-            <button class="close-modal-btn" data-modal-id="${modalId}">&times;</button>
-        </div>
-        <div class="modal-body">
-            <p>Select a time for pickup. The earliest available time is 3 hours after booking.</p>
-            <input type="time" id="pickup-time-input" class="sp-input-field" min="${minTime}">
-        </div>
-        <div class="modal-footer">
-            <button id="confirm-pickup-request-btn" class="btn btn-primary btn-full">Confirm Request</button>
-        </div>
-    `;
-    showModal(modalId, content);
-    document.getElementById('confirm-pickup-request-btn').addEventListener('click', async () => {
-        const pickupTime = document.getElementById('pickup-time-input').value;
-        if (!pickupTime) {
-            showToast('Please select a valid time.', 'error');
-            return;
-        }
-        showLoader(true, 'Sending pickup request...');
-        try {
-            const user = getCurrentUser();
-            await requestPickup(booking.locationId, booking.id, {
-                userId: user.uid, pickupTime, status: 'requested',
-                pickupAddress: booking.pickupAddress, locationName: booking.locationName,
-                timestamp: Date.now()
-            });
-            showToast('Pickup request sent successfully!', 'success');
-            hideModal(modalId);
-        } catch (error) {
-            showToast(`Error: ${error.message}`, 'error');
-        } finally {
-            showLoader(false);
-        }
-    });
-}
-
 export async function renderAddInventoryModal(booking) {
     showToast("Inventory management is not yet implemented.", "info");
 }
 
 export async function renderExtendBookingModal(booking) {
-    showToast("Booking extension is not yet implemented.", "info");
+    showLoader(true, 'Fetching data for extension...');
+    const modalId = 'extend-booking-modal';
+    const locationData = await fetchStorageLocationData(booking.locationId);
+    if (!locationData) {
+        showToast('Failed to get location data to calculate extension price.', 'error');
+        showLoader(false);
+        return;
+    }
+    const rates = locationData.categories.flatMap(cat => cat.sizes)
+                             .find(size => size.name === booking.storageType)
+                             ?.rates || [];
+    
+    showLoader(false);
+    const originalEndDate = booking.endDate ? new Date(booking.endDate) : new Date(Date.now());
+    const minEndDate = new Date(originalEndDate);
+    minEndDate.setDate(minEndDate.getDate() + 1);
+    const minEndDateString = minEndDate.toISOString().split('T')[0];
+
+    const calculatePrice = (newDate) => {
+        const diffTime = newDate.getTime() - originalEndDate.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const dailyRate = rates.find(r => r.duration === 'Daily')?.price || 0;
+        const totalExtensionPrice = diffDays * dailyRate;
+        return booking.totalPrice + totalExtensionPrice;
+    };
+
+    let newTotalPrice = calculatePrice(minEndDate);
+
+    const content = `
+        <div class="modal-header">
+            <h3>Extend Booking for ${booking.storageType}</h3>
+            <button class="close-modal-btn" data-modal-id="${modalId}">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p><strong>Original End Date:</strong> ${formatDate(booking.endDate)}</p>
+            <div class="sp-bookings-flow-input-group mt-1">
+                <label for="new-end-date-input">New End Date:</label>
+                <input type="date" id="new-end-date-input" class="sp-input-field" value="${minEndDateString}" min="${minEndDateString}">
+            </div>
+            <p class="mt-1"><strong>New Total Price:</strong> <span id="new-total-price-usd">$${newTotalPrice.toFixed(2)}</span></p>
+            <p class="mt-0-5 text-sm font-semibold text-gray-700" id="new-total-price-idr"></p>
+            <p class="text-xs text-gray-500 mt-0-5 mb-1" id="currency-conversion-status"></p>
+        </div>
+        <div class="modal-footer">
+            <button id="confirm-extend-btn" class="btn btn-primary btn-full">Confirm Extension</button>
+        </div>
+    `;
+    showModal(modalId, content);
+    convertCurrencyAndUpdateUI(newTotalPrice, 'new-total-price-idr');
+
+    const newEndDateInput = document.getElementById('new-end-date-input');
+    const newTotalPriceUsdSpan = document.getElementById('new-total-price-usd');
+
+    newEndDateInput.addEventListener('change', () => {
+        const newSelectedDate = new Date(newEndDateInput.value);
+        newTotalPrice = calculatePrice(newSelectedDate);
+        newTotalPriceUsdSpan.textContent = `$${newTotalPrice.toFixed(2)}`;
+        convertCurrencyAndUpdateUI(newTotalPrice, 'new-total-price-idr');
+    });
+
+    document.getElementById('confirm-extend-btn').addEventListener('click', async () => {
+        showLoader(true, 'Processing extension...');
+        try {
+            const newEndDateTimestamp = new Date(newEndDateInput.value).getTime();
+            showLoader(true, 'Converting currency for payment...');
+            const amountInIDR = await getConvertedPrice(newTotalPrice);
+            showLoader(true, 'Updating booking and redirecting to payment...');
+            await updateBookingStatus(booking.id, 'extended', {
+                endDate: newEndDateTimestamp,
+                totalPrice: newTotalPrice,
+                paymentStatus: 'pending',
+            });
+            const user = getCurrentUser();
+            const userData = await fetchUserData(user.uid);
+            await createIpaymuInvoice({
+                id: booking.orderId || booking.id,
+                totalPrice: amountInIDR,
+                userEmail: userData.email,
+                userName: userData.name
+            });
+            showToast('Booking successfully extended. Redirecting to online payment.', 'success');
+            hideModal(modalId);
+        } catch (error) {
+            showToast(`Extension failed: ${error.message}`, 'error');
+            showLoader(false);
+        }
+    });
 }
 
 export async function renderPayToCheckInModal(booking) {
@@ -1217,11 +1345,16 @@ export async function renderPayToCheckInModal(booking) {
     document.getElementById('pay-online-btn').addEventListener('click', async () => {
         showLoader(true, 'Redirecting to payment gateway...');
         try {
+            showLoader(true, 'Converting currency for payment...');
+            const amountInIDR = await getConvertedPrice(booking.totalPrice);
+            showLoader(true, 'Redirecting to payment gateway...');
             const user = getCurrentUser();
             const userData = await fetchUserData(user.uid);
             await createIpaymuInvoice({
-                id: booking.orderId || booking.id, totalPrice: booking.totalPrice,
-                userEmail: userData.email, userName: userData.name
+                id: booking.orderId || booking.id,
+                totalPrice: amountInIDR,
+                userEmail: userData.email,
+                userName: userData.name
             });
             hideModal(modalId);
         } catch (error) {
@@ -1233,35 +1366,168 @@ export async function renderPayToCheckInModal(booking) {
 
 export async function renderBookingDetailsModal(booking) {
     const modalId = 'booking-details-modal';
-    const content = `
-        <div class="modal-header">
-            <h3>Booking Details</h3>
-            <button class="close-modal-btn" data-modal-id="${modalId}">&times;</button>
-        </div>
-        <div class="modal-body">
-            <div class="booking-detail-card">
-                <p><strong>Booking ID:</strong> ${booking.id}</p>
-                <p><strong>Location:</strong> ${booking.locationName}</p>
-                <p><strong>Status:</strong> <span class="booking-status-badge status-${booking.bookingStatus}">${booking.bookingStatus.replace(/_/g, ' ')}</span></p>
-                <p><strong>Total Price:</strong> $${booking.totalPrice.toFixed(2)}</p>
-                <p><strong>Payment:</strong> ${booking.paymentStatus.replace(/_/g, ' ')} via ${booking.paymentMethod.replace(/_/g, ' ')}</p>
+    
+    const user = getCurrentUser();
+    let userData = null;
+    if (user) {
+        try {
+            userData = await fetchUserData(user.uid);
+        } catch(e) {
+            console.error("Failed to fetch user data for modal", e);
+        }
+    }
+    
+    const formatAndRenderDetail = (label, value, convertValue = true) => {
+        if (value) {
+            const formattedValue = convertValue ? value.toString().replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : value;
+            return `<p class="booking-detail-item"><strong>${label}:</strong> ${formattedValue}</p>`;
+        }
+        return '';
+    };
+
+    let orderInfoHtml = `
+        <div class="booking-detail-card">
+            <h4 class="booking-details-title">Order Information</h4>
+            <div class="booking-details-grid">
+                ${formatAndRenderDetail('Booking ID', booking.id, false)}
+                ${formatAndRenderDetail('Location', booking.locationName, false)}
+                ${formatAndRenderDetail('Storage Type', booking.storageType, false)}
+                ${formatAndRenderDetail('Category', booking.category, false)}
+                ${formatAndRenderDetail('Duration', booking.duration, false)}
+                ${formatAndRenderDetail('Status', `<span class="booking-status-badge status-${booking.bookingStatus || 'active'}">${(booking.bookingStatus || 'active').replace(/_/g, ' ')}</span>`, false)}
             </div>
-             <div class="booking-detail-card">
-                <h4 class="booking-details-title">QR Code</h4>
-                <div class="booking-qrcode-container" id="qrcode-container"></div>
-                <p class="booking-qrcode-caption">Show this code to staff for verification.</p>
-            </div>
-        </div>
-        <div class="modal-footer">
-             <button id="download-invoice-btn" data-action="download_invoice" class="btn btn-secondary">Download Invoice</button>
         </div>
     `;
-    showModal(modalId, content);
-    new QRCode(document.getElementById("qrcode-container"), {
-        text: booking.id, width: 128, height: 128,
-        correctLevel: QRCode.CorrectLevel.H
-    });
-    document.getElementById('download-invoice-btn').addEventListener('click', () => {
-        renderInvoiceViewer(booking);
+
+    let serviceTimingHtml = `
+        <div class="booking-detail-card">
+            <h4 class="booking-details-title">Service & Timing</h4>
+            <div class="booking-details-grid">
+                ${formatAndRenderDetail('Service Type', booking.serviceType)}
+                ${formatAndRenderDetail('Booking Date', formatDate(booking.startDate), false)}
+                ${formatAndRenderDetail('End Date', formatDate(booking.endDate), false)}
+                ${formatAndRenderDetail('Booked On', formatDateTime(booking.createdAt), false)}
+                ${formatAndRenderDetail('Checked In', formatDateTime(booking.checkInTime), false)}
+                ${formatAndRenderDetail('Checked Out', formatDateTime(booking.checkOutTime), false)}
+            </div>
+        </div>
+    `;
+
+    let pickupDetailsHtml = '';
+    if (booking.serviceType === 'pickup' && (booking.pickupAddress || booking.pickupTime || booking.pickupStatus)) {
+        let courierInfo = '';
+        if (booking.courierId && booking.courierName) {
+            courierInfo = `
+                ${formatAndRenderDetail('Courier Name', booking.courierName, false)}
+            `;
+        }
+        pickupDetailsHtml = `
+            <div class="booking-detail-card">
+                <h4 class="booking-details-title">Pickup Details</h4>
+                <div class="booking-details-grid">
+                    ${formatAndRenderDetail('Pickup Status', booking.pickupStatus)}
+                    ${formatAndRenderDetail('Pickup Address', booking.pickupAddress, false)}
+                    ${formatAndRenderDetail('Pickup Time', booking.pickupTime, false)}
+                    ${courierInfo}
+                    ${formatAndRenderDetail('Contact Number', booking.contactNumber, false)}
+                </div>
+            </div>
+        `;
+    }
+
+    let deliveryDetailsHtml = '';
+    if (booking.needsDelivery) {
+        deliveryDetailsHtml = `
+            <div class="booking-detail-card">
+                <h4 class="booking-details-title">Delivery Details</h4>
+                <div class="booking-details-grid">
+                    ${formatAndRenderDetail('Delivery Status', booking.deliveryStatus)}
+                    ${formatAndRenderDetail('Delivery Address', booking.deliveryAddress, false)}
+                    ${formatAndRenderDetail('Delivery Time', booking.deliveryTime, false)}
+                    ${formatAndRenderDetail('Contact Number', booking.deliveryContactNumber, false)}
+                </div>
+            </div>
+        `;
+    }
+
+    let paymentInfoHtml = `
+        <div class="booking-detail-card">
+            <h4 class="booking-details-title">Payment Information</h4>
+            <div class="booking-details-grid">
+                ${formatAndRenderDetail('Total Price', `$${booking.totalPrice.toFixed(2)}`, false)}
+                ${formatAndRenderDetail('Payment Status', booking.paymentStatus)}
+                ${formatAndRenderDetail('Payment Method', booking.paymentMethod)}
+                ${formatAndRenderDetail('Voucher', booking.voucherCode, false)}
+                ${formatAndRenderDetail('Discount', booking.discountApplied ? `${booking.discountApplied}%` : '', false)}
+            </div>
+        </div>
+    `;
+
+    let securityInfoHtml = '';
+    if (booking.sealNumber || booking.sealPhotoUrl || booking.id) {
+        securityInfoHtml = `
+            <div class="booking-detail-card">
+                <h4 class="booking-details-title">Security Information</h4>
+                <div style="display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1rem;">
+                    ${formatAndRenderDetail('Seal Code', booking.sealNumber, false)}
+                    ${booking.sealPhotoUrl ? `<img src="${booking.sealPhotoUrl}" alt="Seal Photo" style="max-width: 200px; border-radius: 0.5rem;">` : ''}
+                    <div class="booking-qrcode-container" id="qrcode-container"></div>
+                </div>
+            </div>
+        `;
+    }
+    
+    let actionsHtml = getBookingCardActionButtons(booking);
+
+    const modalContent = `
+        <div class="modal-content-inner">
+            <div class="booking-details-modal-header">
+                <h3 class="modal-title">Booking Details</h3>
+                <button type="button" class="close-modal-btn">&times;</button>
+            </div>
+            <div class="booking-details-modal-body">
+                ${orderInfoHtml}
+                ${serviceTimingHtml}
+                ${pickupDetailsHtml}
+                ${deliveryDetailsHtml}
+                ${paymentInfoHtml}
+                ${securityInfoHtml}
+            </div>
+            <div class="modal-footer">
+                ${actionsHtml}
+            </div>
+        </div>
+    `;
+
+    showModal(modalId, modalContent);
+
+    const qrcodeContainer = document.getElementById("qrcode-container");
+    if (qrcodeContainer && typeof QRCode !== 'undefined') {
+        new QRCode(qrcodeContainer, {
+            text: booking.id, width: 128, height: 128,
+            colorDark: "#000000", colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.H
+        });
+    }
+
+    document.querySelectorAll('#' + modalId + ' .modal-footer button[data-action]').forEach(button => {
+        button.addEventListener('click', async (event) => {
+            const action = event.target.dataset.action;
+            
+            showLoader(true, `Performing action: ${action}...`);
+            try {
+                if (action === 'download-invoice') {
+                    await downloadInvoice(booking);
+                } else if (action === 'review') {
+                    renderReviewModal(booking);
+                }
+            } catch (error) {
+                console.error(`Error performing ${action}:`, error);
+                showToast(`Failed to perform action "${action}". Please try again.`, 'error');
+            } finally {
+                showLoader(false);
+                hideModal(modalId);
+            }
+        });
     });
 }

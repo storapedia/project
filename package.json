@@ -1,0 +1,12 @@
+{
+  "name": "storapedia",
+  "version": "1.0.0",
+  "description": "Storapedia PWA",
+  "scripts": {
+    "start": "netlify dev"
+  },
+  "dependencies": {
+    "firebase-admin": "^11.5.0",
+    "node-fetch": "^2.6.7"
+  }
+}

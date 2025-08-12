@@ -239,9 +239,9 @@ const Profile = {
         `;
     },
     afterRender: async () => {
-        // Cek apakah user sudah login, jika tidak, arahkan ke halaman auth
         const user = firebase.auth().currentUser;
         if (!user) {
+            console.warn("User not authenticated. Redirecting to auth page.");
             location.hash = '/auth';
             return;
         }
@@ -269,29 +269,36 @@ const Profile = {
 
         const showPopup = (title, text, icon) => {
             if (typeof Swal !== 'undefined') {
-                Swal.fire({ title, text, icon });
+                return Swal.fire({ title, text, icon });
             } else {
                 alert(`${title}: ${text}`);
+                return Promise.resolve();
             }
         };
 
         const fetchUserProfile = async () => {
             const userRef = firebase.database().ref(`users/${currentUserId}`);
             userRef.on('value', (snapshot) => {
-                const user = snapshot.val();
-                if (user) {
-                    profileUserName.textContent = user.name || 'User';
-                    profileUserEmail.textContent = user.email || 'N/A';
-                    userNameInput.value = user.name || '';
-                    userPhoneInput.value = user.phone || '';
-                    if (user.photoURL) {
-                        profilePicture.src = user.photoURL;
-                    } else {
-                        profilePicture.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'User')}&background=00BEFC&color=fff&size=100`;
-                    }
-                    if (user.emailVerified) {
-                        verifiedBadge.style.display = 'flex';
-                    }
+                const userData = snapshot.val();
+                
+                // Use data from both Firebase Auth and Realtime Database as fallback
+                const displayName = userData?.name || user.displayName || 'User';
+                const email = userData?.email || user.email || 'N/A';
+                const photoURL = userData?.photoURL || user.photoURL;
+
+                profileUserName.textContent = displayName;
+                profileUserEmail.textContent = email;
+                userNameInput.value = userData?.name || user.displayName || '';
+                userPhoneInput.value = userData?.phone || '';
+                
+                if (photoURL) {
+                    profilePicture.src = photoURL;
+                } else {
+                    profilePicture.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName || 'User')}&background=00BEFC&color=fff&size=100`;
+                }
+
+                if (user.emailVerified) {
+                    verifiedBadge.style.display = 'flex';
                 }
             });
         };
@@ -405,34 +412,94 @@ const Profile = {
             );
         });
 
-        const setupAccordion = (toggleId, contentId, dataPath) => {
+        const renderFaqAccordionContent = (container, data) => {
+            container.innerHTML = '';
+            let categoriesHtml = '';
+            Object.entries(data).forEach(([categoryId, category]) => {
+                const qnaItemsHtml = Object.values(category.items || {}).map(item => `
+                    <div class="info-toggle-item faq-item-accordion">
+                        <div class="info-toggle-header">
+                            <span style="font-weight: 500; color: ${s.neutral800};">Q: ${item.q}</span>
+                            <i class="fas fa-chevron-down info-toggle-icon"></i>
+                        </div>
+                        <div class="info-toggle-content">
+                            <p style="color: ${s.neutral700}; white-space: pre-wrap;">A: ${item.a}</p>
+                        </div>
+                    </div>
+                `).join('');
+                
+                categoriesHtml += `
+                    <div class="faq-category-accordion">
+                        <div class="info-toggle-header">
+                            <span style="font-weight: 700; color: ${s.neutral900};">${category.title}</span>
+                            <i class="fas fa-chevron-down info-toggle-icon"></i>
+                        </div>
+                        <div class="info-toggle-content">
+                            ${category.subtitle ? `<p style="font-style: italic; color: ${s.neutral700}; margin-bottom: 1rem;">${category.subtitle}</p>` : ''}
+                            <div class="space-y-2">
+                                ${qnaItemsHtml}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = categoriesHtml;
+
+            container.querySelectorAll('.info-toggle-header').forEach(header => {
+                header.addEventListener('click', (event) => {
+                    const content = header.nextElementSibling;
+                    const icon = header.querySelector('.info-toggle-icon');
+                    const isExpanded = content.style.display === 'block';
+
+                    // Cek jika ini header kategori atau item Q&A
+                    if (header.closest('.faq-category-accordion')) {
+                        // Jika ini header kategori, tutup/buka semua item di dalamnya
+                        const itemsInContent = content.querySelectorAll('.info-toggle-content');
+                        if (!isExpanded) {
+                           itemsInContent.forEach(item => item.style.display = 'none');
+                        }
+                    }
+                    
+                    content.style.display = isExpanded ? 'none' : 'block';
+                    icon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(180deg)';
+                });
+            });
+        };
+
+        const setupInfoAccordion = (toggleId, contentId, dataPath) => {
             const header = document.getElementById(toggleId);
             const contentDiv = document.getElementById(contentId);
             const icon = header.querySelector('.info-toggle-icon');
 
             header.addEventListener('click', async () => {
                 const isExpanded = contentDiv.style.display === 'block';
+                
                 contentDiv.style.display = isExpanded ? 'none' : 'block';
                 icon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(180deg)';
 
-                if (!isExpanded && contentDiv.innerHTML === '') {
+                if (!isExpanded && contentDiv.innerHTML.trim() === '') {
                     contentDiv.innerHTML = `<p style="text-align: center; color: ${s.neutral700};">Loading...</p>`;
                     const dataRef = firebase.database().ref(dataPath);
                     dataRef.once('value').then(snapshot => {
                         const data = snapshot.val();
                         if (data) {
-                            let htmlContent = '';
-                            Object.values(data).forEach(item => {
-                                htmlContent += `
-                                    <div style="margin-bottom: 1rem;">
-                                        <h4 style="font-weight: 600; color: ${s.neutral800}; margin-bottom: 0.5rem;">${item.q || item.title}</h4>
-                                        <p style="color: ${s.neutral700};">${item.a || item.content}</p>
-                                    </div>
-                                `;
-                            });
-                            contentDiv.innerHTML = htmlContent;
+                            if (dataPath === 'faqs') {
+                                renderFaqAccordionContent(contentDiv, data);
+                            } else {
+                                let htmlContent = '';
+                                const dataArray = Array.isArray(data) ? data : Object.values(data);
+                                dataArray.forEach(item => {
+                                    htmlContent += `
+                                        <div style="margin-bottom: 1rem;">
+                                            <h4 style="font-weight: 600; color: ${s.neutral800}; margin-bottom: 0.5rem;">${item.title}</h4>
+                                            <p style="color: ${s.neutral700}; white-space: pre-wrap;">${item.content}</p>
+                                        </div>
+                                    `;
+                                });
+                                contentDiv.innerHTML = htmlContent;
+                            }
                         } else {
-                            contentDiv.innerHTML = `<p style="text-align: center; color: ${s.neutral700};">No content found.</p>`;
+                            contentDiv.innerHTML = `<p style="text-align: center; color: ${s.danger500};">No content found.</p>`;
                         }
                     }).catch(error => {
                         console.error(`Error fetching ${dataPath}:`, error);
@@ -442,19 +509,19 @@ const Profile = {
             });
         };
 
-        setupAccordion('faq-toggle-header', 'faq-content', 'faqs');
-        setupAccordion('tnc-toggle-header', 'tnc-content', 'tnc');
-        setupAccordion('refund-toggle-header', 'refund-content', 'refundPolicy');
+        setupInfoAccordion('faq-toggle-header', 'faq-content', 'faqs');
+        setupInfoAccordion('tnc-toggle-header', 'tnc-content', 'tnc');
+        setupInfoAccordion('refund-toggle-header', 'refund-content', 'refundPolicy');
 
-        logoutBtn.addEventListener('click', () => {
-            firebase.auth().signOut().then(() => {
-                showPopup('Logout Successful', 'You have been successfully logged out.', 'success').then(() => {
-                    location.hash = '/auth';
-                });
-            }).catch((error) => {
+        logoutBtn.addEventListener('click', async () => {
+            try {
+                await firebase.auth().signOut();
+                await showPopup('Logout Successful', 'You have been successfully logged out.', 'success');
+                location.hash = '/auth';
+            } catch (error) {
                 console.error("Error logging out:", error);
                 showPopup('Logout Failed', 'An error occurred during logout.', 'error');
-            });
+            }
         });
 
         fetchUserProfile();

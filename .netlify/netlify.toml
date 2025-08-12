@@ -1,8 +1,8 @@
 functionsDirectory = "/Users/macbook/Documents/storapedia/netlify/functions"
-functionsDirectoryOrigin = "default"
+functionsDirectoryOrigin = "config-v1"
+redirectsOrigin = "config"
 plugins = []
 headers = []
-redirects = []
 
 [build]
 publish = "/Users/macbook/Documents/storapedia"
@@ -23,6 +23,21 @@ functions = "/Users/macbook/Documents/storapedia/netlify/functions"
 
 [build.services]
 
+[dev]
+functions = "netlify/functions"
+
 [functions]
 
 [functions."*"]
+
+[[redirects]]
+from = "/api/*"
+to = "/.netlify/functions/:splat"
+status = 200.0
+force = false
+
+[redirects.query]
+
+[redirects.conditions]
+
+[redirects.headers]

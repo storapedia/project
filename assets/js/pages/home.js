@@ -97,8 +97,7 @@ async function renderLocations() {
 
         return `
             <div class="location-card">
-                <img src="${loc.imageUrl || 'https://via.placeholder.com/300x150'}" alt="${loc.name}" class="location-card-img">
-                <div class="location-card-content">
+<img src="${loc.imageUrl || 'https://placehold.co/300x150'}" alt="${loc.name}" class="location-card-img">                <div class="location-card-content">
                     <div>
                         <h4 class="location-card-title">${loc.name}</h4>
                         <p class="location-card-info">${loc.address.split(',').slice(0, 2).join(', ')}</p>
@@ -128,7 +127,7 @@ function renderFilters() {
 
     filterTypeContainer.innerHTML = `
         <button class="filter-sort-tab ${state.filters.filterType === 'features' ? 'active' : ''}" data-filter-type="features">Features</button>
-        <button class="filter-sort-tab ${state.filters.filterType === 'categories' ? 'active' : ''}" data-filter-type="categories">Categories</button>
+        <button class="filter-sort-tab ${state.filters.filterType === 'categories' ? 'active' : ''}" data-filter-type="categories">Storage Types</button>
     `;
 
     if (state.filters.filterType === 'features') {
@@ -352,7 +351,6 @@ export default {
             state.allReviews = publicDataCache.reviews || {};
             state.allEasySteps = publicDataCache.easySteps || {};
 
-            // Extract unique features and categories from the fetched data
             const { uniqueFeatures, uniqueCategories } = extractUniqueFeaturesAndCategories(state.allLocations);
             state.allAvailableFeatures = uniqueFeatures;
             state.allAvailableCategories = uniqueCategories;

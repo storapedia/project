@@ -156,7 +156,7 @@ export async function requestPickup(locationId, requestData) {
         const adminNotificationRef = db.ref('notifications/admin').push();
         const notificationData = {
             title: `New Pickup Request for ${requestData.locationName}`,
-            body: `Booking ID: ${requestData.bookingId} - User ${requestData.userId}`,
+            body: `Booking ID: ${requestData.id} - User ${requestData.userId}`,
             timestamp: Date.now(),
             read: false,
             type: 'pickupRequest'
@@ -284,3 +284,46 @@ export const uploadInventoryImage = async (bookingId, imageFile) => {
         throw error;
     }
 };
+
+/**
+ * Sends a chat message to a courier and also logs it for the admin.
+ * @param {string} userId - The user's ID.
+ * @param {string} courierId - The courier's ID.
+ * @param {string} messageText - The message content.
+ */
+export async function sendMessageToCourierAndAdmin(userId, courierId, messageText) {
+  try {
+    const userChatRef = db.ref(`chats/${userId}`).push();
+    await userChatRef.set({
+      sender: 'user',
+      text: messageText,
+      timestamp: Date.now(),
+      read: true
+    });
+
+    const courierChatRef = db.ref(`chats/couriers/${courierId}`).push();
+    await courierChatRef.set({
+      sender: 'user',
+      userId: userId,
+      text: messageText,
+      timestamp: Date.now(),
+      read: false
+    });
+
+    const adminChatRef = db.ref('chats/admins/global').push();
+    await adminChatRef.set({
+      sender: 'user',
+      userId: userId,
+      courierId: courierId,
+      text: messageText,
+      timestamp: Date.now(),
+      read: false
+    });
+
+    return true;
+
+  } catch (error) {
+    console.error("Error sending message to courier and admin:", error);
+    throw error;
+  }
+}

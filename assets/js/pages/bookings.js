@@ -1,62 +1,93 @@
-// storapedia/assets/js/pages/bookings.js
-
-import { getStarRatingHTML } from '../ui/components.js';
 import { showLoader, showToast } from '../ui/ui-helpers.js';
-import { listenForUserBookings, updateBookingStatus, fetchUserData, submitReview, requestPickup, getBookingById, fetchStorageLocationData } from '../services/firebase-api.js';
+import { listenForUserBookings, updateBookingStatus, fetchUserData, submitReview, requestPickup, fetchStorageLocationData, fetchCourierData, sendMessageToCourierAndAdmin } from '../services/firebase-api.js';
 import { getCurrentUser } from '../services/auth.js';
 import { createIpaymuInvoice } from '../services/payment-handler.js';
-// Import renderAddInventoryModal has been removed as it is no longer used.
+import { renderPayToCheckInModal, renderExtendBookingModal, renderReviewModal, generateInvoiceHtml } from '../ui/modals.js';
 
 let bookingsListener = null;
 
 const formatDate = (timestamp) => {
-    if (!timestamp) return 'N/A';
+    if (!timestamp) return '';
     return new Date(timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
 const formatDateTime = (timestamp) => {
-    if (!timestamp) return 'N/A';
+    if (!timestamp) return '';
     return new Date(timestamp).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
 
-function getSmartButton(booking) {
-    if (booking.bookingStatus === 'active' || booking.bookingStatus === 'extended') {
-        if (booking.serviceType === 'self-dropoff' && (!booking.checkInTime || booking.checkInTime === 0)) {
-            if (booking.paymentStatus === 'paid') {
-                return `<button class="btn btn-primary btn-smart-action" data-action="checkin"><i class="fas fa-sign-in-alt"></i> Check In</button>`;
-            } else if (booking.paymentStatus === 'unpaid_on_site' && booking.paymentMethod !== 'cod_on_site') {
-                return `<button class="btn btn-warning btn-smart-action" data-action="pay_to_checkin"><i class="fas fa-dollar-sign"></i> Pay & Check In</button>`;
-            }
-        } else if (booking.serviceType === 'pickup' && (!booking.checkInTime || booking.checkInTime === 0)) {
-            return `<button class="btn btn-info btn-smart-action" data-action="request_pickup"><i class="fas fa-truck-loading"></i> Request Pickup</button>`;
-        }
-    } else if (booking.bookingStatus === 'checked_in') {
-        return `<button class="btn btn-info btn-smart-action" data-action="add_inventory" data-booking-id="${booking.id}"><i class="fas fa-box"></i> Add Inventory</button>`;
-    } else if (booking.bookingStatus === 'completed') {
+async function getBookingStatusNotification(booking) {
+    // --- PERBAIKAN 1: Sembunyikan notifikasi jika sudah check-in ---
+    // Jika booking sudah masuk (checked in), jangan tampilkan status kurir lagi.
+    if (booking.bookingStatus === 'checked_in') {
         return '';
     }
-    return '';
+
+    if (booking.serviceType !== 'pickup') {
+        return '';
+    }
+
+    let statusHtml = '';
+
+    switch (booking.pickupStatus) {
+        case 'requested':
+            if (booking.courierId) {
+                const courierData = await fetchCourierData(booking.courierId);
+                const courierName = courierData ? courierData.name : 'N/A';
+                statusHtml = `<p class="booking-card-info mt-0-5 text-success-500"><i class="fas fa-user-check"></i> <b>Courier Assigned:</b> ${courierName}</p>`;
+            } else {
+                statusHtml = `<p class="booking-card-info mt-0-5 text-warning-500"><i class="fas fa-clock"></i> <b>Pickup Requested:</b> Waiting for courier assignment.</p>`;
+            }
+            break;
+        case 'picked_up':
+            statusHtml = `<p class="booking-card-info mt-0-5 text-info-500"><i class="fas fa-truck-loading"></i> <b>Item Picked Up:</b> On the way to our facility.</p>`;
+            break;
+        case 'completed':
+             statusHtml = `<p class="booking-card-info mt-0-5 text-success-500"><i class="fas fa-check-circle"></i> <b>Pickup Complete:</b> Item has been checked in.</p>`;
+             break;
+        default:
+            break;
+    }
+    
+    if (booking.needsDelivery && booking.deliveryStatus === 'requested') {
+        statusHtml += `<p class="booking-card-info mt-0-5 text-warning-500"><i class="fas fa-truck"></i> Delivery Requested</p>`;
+    }
+
+    return statusHtml;
 }
 
-function getBookingCardActionButtons(booking) {
+
+async function getBookingCardActionButtons(booking) {
     let buttonsHtml = `<button class="btn btn-secondary" data-booking-id="${booking.id}" data-action="details"><i class="fas fa-info-circle"></i> Details</button>`;
     const now = Date.now();
     const endDate = booking.endDate;
+    const isPickupService = booking.serviceType === 'pickup';
 
-    if (booking.bookingStatus === 'active' || booking.bookingStatus === 'extended') {
+    if (booking.bookingStatus === 'checked_in') {
+        buttonsHtml += `<button class="btn btn-info add-inventory-btn" data-booking-id="${booking.id}" data-action="add_inventory"><i class="fas fa-box"></i> Add Inventory</button>`;
+        
+        // --- PERBAIKAN 2: Kondisi pembayaran untuk tombol Extend ---
+        // Mencakup 'paid' (online) dan 'paid_on_site' (COD)
+        const isPaid = ['paid', 'paid_on_site'].includes(booking.paymentStatus);
+
+        if (isPaid && now <= endDate) {
+            buttonsHtml += `<button class="btn btn-warning extend-btn" data-booking-id="${booking.id}" data-action="extend"><i class="fas fa-calendar-plus"></i> Extend</button>`;
+        }
+
+    } else if (booking.bookingStatus === 'active' || booking.bookingStatus === 'extended') {
         if (booking.serviceType === 'self-dropoff' && (!booking.checkInTime || booking.checkInTime === 0)) {
             if (booking.paymentStatus === 'paid') {
                 buttonsHtml += `<button class="btn btn-primary check-in-btn" data-booking-id="${booking.id}" data-action="checkin"><i class="fas fa-sign-in-alt"></i> Check In</button>`;
             } else if (booking.paymentStatus === 'unpaid_on_site' && booking.paymentMethod !== 'cod_on_site') {
                 buttonsHtml += `<button class="btn btn-warning pay-to-check-in-btn" data-booking-id="${booking.id}" data-action="pay_to_checkin"><i class="fas fa-dollar-sign"></i> Pay & Check In</button>`;
             }
-        } else if (booking.serviceType === 'pickup' && (!booking.checkInTime || booking.checkInTime === 0)) {
-            buttonsHtml += `<button class="btn btn-info request-pickup-btn" data-booking-id="${booking.id}" data-action="request_pickup"><i class="fas fa-truck-loading"></i> Request Pickup</button>`;
-        }
-    } else if (booking.bookingStatus === 'checked_in') {
-        buttonsHtml += `<button class="btn btn-info add-inventory-btn" data-booking-id="${booking.id}" data-action="add_inventory"><i class="fas fa-box"></i> Add Inventory</button>`;
-        if (booking.paymentStatus === 'paid' && now <= endDate) {
-            buttonsHtml += `<button class="btn btn-warning extend-btn" data-booking-id="${booking.id}" data-action="extend"><i class="fas fa-calendar-plus"></i> Extend</button>`;
+        } else if (isPickupService && !booking.pickupStatus) {
+             buttonsHtml += `<button class="btn btn-info request-pickup-btn" data-booking-id="${booking.id}" data-action="request_pickup"><i class="fas fa-truck-loading"></i> Request Pickup</button>`;
+        } else if (isPickupService && booking.pickupStatus === 'requested' && booking.courierId) {
+             const courierData = await fetchCourierData(booking.courierId);
+             if (courierData) {
+                buttonsHtml += `<button class="btn btn-success pickup-assigned-btn" data-booking-id="${booking.id}" data-action="view_courier_details"><i class="fas fa-user-check"></i> View Courier</button>`;
+             }
         }
     }
 
@@ -65,141 +96,6 @@ function getBookingCardActionButtons(booking) {
     }
 
     return buttonsHtml;
-}
-
-function generateInvoiceHtml(booking, userData) {
-    const invoiceNumber = `SP-${booking.id.substring(1, 9).toUpperCase()}`;
-    const invoiceDate = formatDate(Date.now());
-    const customerName = userData?.name || 'Guest User';
-    const customerEmail = userData?.email || 'N/A';
-    const customerPhone = userData?.phone || 'N/A';
-    const customerAddress = booking.serviceType === 'pickup' ? (booking.pickupAddress || 'N/A') : 'N/A';
-    
-    // Base64 encoded logo string is intentionally removed to keep the code clean
-    const base64Logo = `...`; 
-
-    return `
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Storapedia Invoice - ${invoiceNumber}</title>
-            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
-            <style>
-                /* New styles for invoice, moved from inline HTML */
-                .invoice-container { max-width: 800px; margin: 0 auto; background-color: #ffffff; padding: 40px; border-radius: 1.5rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08); border: 1px solid #e2e8f0; }
-                .invoice-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; padding-bottom: 20px; border-bottom: 2px solid #DBEAFE; }
-                .invoice-header .logo { max-width: 180px; height: auto; }
-                .invoice-header .company-info { text-align: right; font-size: 0.9em; }
-                .invoice-header .company-info h1 { color: #1D4ED8; font-size: 2.2em; margin: 0 0 5px 0; font-weight: 800; }
-                .invoice-header .company-info p { margin: 0; color: #64748B; }
-                .invoice-details, .bill-to { display: flex; justify-content: space-between; margin-bottom: 30px; }
-                .invoice-details div, .bill-to div { flex-basis: 48%; }
-                .invoice-details h2, .bill-to h2 { font-size: 1.5em; color: #1E293B; margin-bottom: 10px; border-bottom: 2px solid #E2E8F0; padding-bottom: 5px; font-weight: 700; }
-                .invoice-details p, .bill-to p { margin: 5px 0; font-size: 0.95em; }
-                .invoice-details strong, .bill-to strong { color: #1E293B; }
-                .invoice-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03); border-radius: 0.75rem; overflow: hidden; }
-                .invoice-table th, .invoice-table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #e2e8f0; }
-                .invoice-table th { background-color: #3B82F6; color: white; font-weight: 600; text-transform: uppercase; font-size: 0.85em; }
-                .invoice-table tr:nth-child(even) { background-color: #F8FAFC; }
-                .invoice-table .total-row td { background-color: #DBEAFE; color: #1D4ED8; font-weight: 700; font-size: 1.2em; border-top: 2px solid #3B82F6; }
-                .invoice-table .total-row td:last-child { text-align: right; font-size: 1.5em; font-weight: 800; }
-                .payment-info { margin-top: 30px; padding: 20px; background-color: #EFF6FF; border-radius: 0.75rem; border: 1px solid #DBEAFE; }
-                .payment-info h3 { color: #1D4ED8; font-size: 1.2em; margin-bottom: 10px; font-weight: 700; }
-                .payment-info p { margin: 5px 0; font-size: 0.9em; }
-                .invoice-footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px dashed #CBD5E1; font-size: 0.85em; color: #64748B; }
-                @media print {
-                    body { background-color: #ffffff; }
-                    .invoice-container { box-shadow: none; border: none; }
-                }
-                @media (max-width: 600px) {
-                    .invoice-container { padding: 20px; }
-                    .invoice-header { flex-direction: column; align-items: flex-start; }
-                    .invoice-header .company-info { text-align: left; margin-top: 15px; }
-                    .invoice-details, .bill-to { flex-direction: column; }
-                    .invoice-details div, .bill-to div { flex-basis: 100%; margin-bottom: 20px; }
-                    .invoice-table th, .invoice-table td { padding: 8px 10px; font-size: 0.8em; }
-                    .invoice-table .total-row td { font-size: 1em; }
-                    .invoice-table .total-row td:last-child { text-align: right; font-size: 1.2em; }
-                }
-            </style>
-        </head>
-        <body>
-            <div class="invoice-container">
-                <div class="invoice-header">
-                    <img src="${base64Logo}" alt="Storapedia Logo" class="logo">
-                    <div class="company-info">
-                        <h1>STORAPEDIA</h1>
-                        <p>Jl. Raya Utama No. 123</p>
-                        <p>Denpasar, Bali, Indonesia</p>
-                        <p>Email: info@storapedia.com</p>
-                        <p>Phone: +62 812 3456 7890</p>
-                    </div>
-                </div>
-                <div class="invoice-details">
-                    <div>
-                        <h2>INVOICE</h2>
-                        <p><strong>Invoice No:</strong> ${invoiceNumber}</p>
-                        <p><strong>Date:</strong> ${invoiceDate}</p>
-                        <p><strong>Due Date:</strong> ${formatDate(booking.endDate)}</p>
-                    </div>
-                    <div>
-                        <h2>BILL TO</h2>
-                        <p><strong>Customer Name:</strong> ${customerName}</p>
-                        <p><strong>Email:</strong> ${customerEmail}</p>
-                        <p><strong>Phone:</strong> ${customerPhone}</p>
-                        <p><strong>Address:</strong> ${customerAddress}</p>
-                    </div>
-                </div>
-                <table class="invoice-table">
-                    <thead>
-                        <tr>
-                            <th>Description</th>
-                            <th>Location</th>
-                            <th>Duration</th>
-                            <th>Unit Price</th>
-                            <th>Total</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>${booking.storageType}</td>
-                            <td>${booking.locationName}</td>
-                            <td>${booking.duration}</td>
-                            <td>$${booking.totalPrice.toFixed(2)}</td>
-                            <td>$${booking.totalPrice.toFixed(2)}</td>
-                        </tr>
-                    </tbody>
-                    <tfoot>
-                        <tr>
-                            <td colspan="4" class="text-right invoice-subtotal-label">Subtotal</td>
-                            <td class="text-right invoice-subtotal-price">$${booking.totalPrice.toFixed(2)}</td>
-                        </tr>
-                        <tr>
-                            <td colspan="4" class="text-right invoice-discount-label">Discount (0%)</td>
-                            <td class="text-right invoice-discount-price">$0.00</td>
-                        </tr>
-                        <tr class="total-row">
-                            <td colspan="4" class="text-right invoice-total-label">TOTAL DUE</td>
-                            <td class="text-right invoice-total-price">$${booking.totalPrice.toFixed(2)}</td>
-                        </tr>
-                    </tfoot>
-                </table>
-                <div class="payment-info">
-                    <h3>Payment Information</h3>
-                    <p><strong>Payment Method:</strong> ${booking.paymentMethod.replace('_', ' ').toUpperCase()}</p>
-                    <p><strong>Payment Status:</strong> ${booking.paymentStatus.replace('_', ' ').toUpperCase()}</p>
-                    <p>If you have any questions about this invoice, please contact us.</p>
-                </div>
-                <div class="invoice-footer">
-                    <p>Thank you for choosing Storapedia!</p>
-                    <p>© 2025 Storapedia. All rights reserved.</p>
-                </div>
-            </div>
-        </body>
-        </html>
-    `;
 }
 
 async function downloadInvoice(booking) {
@@ -213,20 +109,6 @@ async function downloadInvoice(booking) {
 
         const invoiceHtml = generateInvoiceHtml(booking, userData);
 
-        const tempDiv = document.createElement('div');
-        tempDiv.style.position = 'fixed';
-        tempDiv.style.top = '0';
-        tempDiv.style.left = '0';
-        tempDiv.style.width = '100vw';
-        tempDiv.style.height = '100vh';
-        tempDiv.style.opacity = '0';
-        tempDiv.style.pointerEvents = 'none';
-        tempDiv.style.zIndex = '-1';
-        tempDiv.innerHTML = invoiceHtml;
-        document.body.appendChild(tempDiv);
-
-        await new Promise(resolve => setTimeout(resolve, 50));
-
         const opt = {
             margin: 15,
             filename: `invoice_${booking.id}.pdf`,
@@ -235,7 +117,7 @@ async function downloadInvoice(booking) {
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
         };
 
-        await html2pdf().set(opt).from(tempDiv).output('datauristring').then(function(pdfDataUri) {
+        await html2pdf().set(opt).from(invoiceHtml).output('datauristring').then(function(pdfDataUri) {
             const newWindow = window.open();
             if (newWindow) {
                 newWindow.document.write('<iframe width=\'100%\' height=\'100%\' src=\'' + pdfDataUri + '\' frameborder=\'0\'></iframe>');
@@ -245,9 +127,6 @@ async function downloadInvoice(booking) {
                 alert('Browser blocked opening a new tab. Please allow pop-ups to view the invoice.');
             }
         });
-
-        document.body.removeChild(tempDiv);
-
     } catch (error) {
         console.error('Error generating or displaying invoice PDF:', error);
         alert('Failed to display the invoice. Please try again.');
@@ -367,22 +246,114 @@ async function showReviewModal(booking) {
 }
 
 async function showBookingDetailsModal(booking) {
-    const isPickupService = booking.serviceType === 'pickup';
-    const hasActualPickupTime = booking.actualPickupTime && booking.actualPickupTime > 0;
-    
-    let responseTimeHtml = '';
-    if (isPickupService && hasActualPickupTime && booking.pickupTime && booking.createdAt) {
-        const pickupRequestDate = new Date(booking.createdAt);
-        const [hours, minutes] = booking.pickupTime.split(':').map(Number);
-        pickupRequestDate.setHours(hours, minutes, 0, 0);
+    const renderDetail = (label, value) => {
+      if (value) {
+        return `<p class="booking-detail-item"><strong>${label}:</strong> ${value}</p>`;
+      }
+      return '';
+    };
 
-        const responseTimeMs = booking.actualPickupTime - pickupRequestDate.getTime();
-        const responseTimeMinutes = Math.floor(responseTimeMs / (1000 * 60));
-        
-        responseTimeHtml = `
-            <p class="booking-detail-item"><strong>Courier Pick up Response Time:</strong> ${Math.max(0, responseTimeMinutes)} minutes</p>
+    let orderInfoHtml = `
+        <div class="booking-detail-card">
+            <h4 class="booking-details-title">Order Information</h4>
+            <div class="booking-details-grid">
+                ${renderDetail('Booking ID', booking.id)}
+                ${renderDetail('Location', booking.locationName)}
+                ${renderDetail('Storage Type', booking.storageType)}
+                ${renderDetail('Category', booking.category)}
+                ${renderDetail('Duration', booking.duration)}
+                ${renderDetail('Status', `<span class="booking-status-badge status-${booking.bookingStatus || 'active'}">${(booking.bookingStatus || 'active').replace(/_/g, ' ')}</span>`)}
+            </div>
+        </div>
+    `;
+
+    let serviceTimingHtml = `
+        <div class="booking-detail-card">
+            <h4 class="booking-details-title">Service & Timing</h4>
+            <div class="booking-details-grid">
+                ${renderDetail('Service Type', booking.serviceType ? booking.serviceType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '')}
+                ${renderDetail('Booking Date', formatDate(booking.startDate))}
+                ${renderDetail('End Date', formatDate(booking.endDate))}
+                ${renderDetail('Booked On', formatDateTime(booking.createdAt))}
+                ${renderDetail('Checked In', formatDateTime(booking.checkInTime))}
+                ${renderDetail('Checked Out', formatDateTime(booking.checkOutTime))}
+            </div>
+        </div>
+    `;
+
+    let pickupDetailsHtml = '';
+    if (booking.serviceType === 'pickup') {
+        const courierInfoHtml = booking.courierName ? `
+            ${renderDetail('Courier', booking.courierName)}
+            ${renderDetail('Contact Number', booking.contactNumber)}
+        ` : '';
+
+        const pickupInfo = `
+            ${renderDetail('Pickup Status', booking.pickupStatus ? booking.pickupStatus.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'N/A')}
+            ${renderDetail('Pickup Address', booking.pickupAddress)}
+            ${renderDetail('Pickup Request Time', booking.pickupTime)}
+            ${renderDetail('Pickup Distance', booking.pickupDistance ? `${booking.pickupDistance.toFixed(2)} km` : '')}
+            ${renderDetail('Pickup Fee', booking.pickupFee ? `$${booking.pickupFee}` : '')}
+            ${courierInfoHtml}
+        `;
+        if (pickupInfo.trim() !== '') {
+            pickupDetailsHtml = `<div class="booking-detail-card"><h4 class="booking-details-title">Pickup Details</h4><div class="booking-details-grid">${pickupInfo}</div></div>`;
+        }
+    }
+
+    let deliveryDetailsHtml = '';
+    if (booking.needsDelivery) {
+        const deliveryInfo = `
+            ${renderDetail('Delivery Status', booking.deliveryStatus ? booking.deliveryStatus.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'N/A')}
+            ${renderDetail('Delivery Address', booking.deliveryAddress)}
+            ${renderDetail('Delivery Request Time', booking.deliveryTime)}
+            ${renderDetail('Delivery Distance', booking.deliveryDistance ? `${booking.deliveryDistance.toFixed(2)} km` : '')}
+            ${renderDetail('Delivery Fee', booking.deliveryFee ? `$${booking.deliveryFee}` : '')}
+            ${renderDetail('Delivery Contact Number', booking.deliveryContactNumber)}
+        `;
+        if (deliveryInfo.trim() !== '') {
+            deliveryDetailsHtml = `<div class="booking-detail-card"><h4 class="booking-details-title">Delivery Details</h4><div class="booking-details-grid">${deliveryInfo}</div></div>`;
+        }
+    }
+
+    let paymentInfoHtml = `
+        <div class="booking-detail-card">
+            <h4 class="booking-details-title">Payment Information</h4>
+            <div class="booking-details-grid">
+                ${renderDetail('Total Price', `$${booking.totalPrice}`)}
+                ${renderDetail('Payment Status', booking.paymentStatus ? booking.paymentStatus.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '')}
+                ${renderDetail('Payment Method', booking.paymentMethod ? booking.paymentMethod.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '')}
+            </div>
+        </div>
+    `;
+
+    let securityInfoHtml = '';
+    if (booking.sealNumber || booking.sealPhotoUrl || booking.id) {
+        securityInfoHtml = `
+            <div class="booking-detail-card">
+                <h4 class="booking-details-title">Security Information</h4>
+                <div style="display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1rem;">
+                    ${renderDetail('Seal Code', booking.sealNumber)}
+                    ${booking.sealPhotoUrl ? `<img src="${booking.sealPhotoUrl}" alt="Seal Photo" style="max-width: 200px; border-radius: 0.5rem;">` : ''}
+                    <div class="booking-qrcode-container" id="qrcode-container"></div>
+                </div>
+            </div>
         `;
     }
+
+    let otherInfoHtml = '';
+    const otherDetails = [
+        renderDetail('Notes', booking.notes),
+        renderDetail('Order ID', booking.orderId),
+        renderDetail('Voucher Code', booking.voucherCode),
+        renderDetail('Discount Applied', booking.discountApplied ? `${booking.discountApplied}%` : ''),
+        renderDetail('Voucher Discount', booking.voucherDiscount ? `$${booking.voucherDiscount}` : ''),
+        renderDetail('Quantity', booking.quantity),
+    ].join('');
+    if (otherDetails.trim() !== '') {
+        otherInfoHtml = `<div class="booking-detail-card"><h4 class="booking-details-title">Other Details</h4><div class="booking-details-grid">${otherInfoHtml}</div></div>`;
+    }
+
 
     const modalContent = `
         <div class="booking-details-modal-header">
@@ -390,40 +361,16 @@ async function showBookingDetailsModal(booking) {
             <button type="button" class="close-modal-btn">&times;</button>
         </div>
         <div class="booking-details-modal-body">
-            <div class="booking-detail-card">
-                <h4 class="booking-details-title">Order Information</h4>
-                <div class="booking-details-grid">
-                    <p class="booking-detail-item"><strong>Booking ID:</strong> ${booking.id}</p>
-                    <p class="booking-detail-item"><strong>Location:</strong> ${booking.locationName}</p>
-                    <p class="booking-detail-item"><strong>Storage Type:</strong> ${booking.storageType}</p>
-                    <p class="booking-detail-item"><strong>Duration:</strong> ${booking.duration}</p>
-                    <p class="booking-detail-item"><strong>Status:</strong> <span class="booking-status-badge status-${booking.bookingStatus || 'active'}">${(booking.bookingStatus || 'active').replace(/_/g, ' ')}</span></p>
-                    <p class="booking-detail-item"><strong>Service Type:</strong> ${booking.serviceType}</p>
-                    <p class="booking-detail-item"><strong>Booking Date:</strong> ${formatDate(booking.startDate)}</p>
-                    ${isPickupService ? `<p class="booking-detail-item"><strong>Pickup Address:</strong> ${booking.pickupAddress || 'Not Set'}</p>` : ''}
-                    ${isPickupService ? `<p class="booking-detail-item"><strong>Pick up Request time:</strong> ${booking.pickupTime || 'Not Set'}</p>` : ''}
-                    ${responseTimeHtml}
-                    <p class="booking-detail-item"><strong>Total Price:</strong> <span class="booking-total-price">$${booking.totalPrice}</span></p>
-                    <p class="booking-detail-item"><strong>Payment Status:</strong> ${booking.paymentStatus === 'unpaid_on_site' ? 'unpaid (on-site)' : booking.paymentStatus.replace(/_/g, ' ')}</p>
-                    <p class="booking-detail-item"><strong>Payment Method:</strong> ${booking.paymentMethod === 'on_site' ? 'on-site' : booking.paymentMethod.replace(/_/g, ' ')}</p>
-                    <p class="booking-detail-item"><strong>Booked On:</strong> ${formatDateTime(booking.createdAt)}</p>
-                    <p class="booking-detail-item"><strong>Seal Code:</strong> ${booking.sealNumber || 'N/A'}</p>
-                    <p class="booking-detail-item"><strong>Seal Photo:</strong> ${booking.sealPhotoUrl ? `<img src="${booking.sealPhotoUrl}" alt="Seal Photo" class="booking-seal-photo">` : 'N/A'}</p>
-                </div>
-                <div class="booking-check-status-grid">
-                    <p class="check-in-status status-${booking.checkInTime ? 'done' : 'pending'}"><strong>Checked In:</strong> ${booking.checkInTime ? formatDateTime(booking.checkInTime) : 'N/A'}</p>
-                    <p class="check-out-status status-${booking.checkOutTime ? 'done' : 'pending'}"><strong>Checked Out:</strong> ${booking.checkOutTime ? formatDateTime(booking.checkOutTime) : 'N/A'}</p>
-                </div>
-            </div>
-            <div class="booking-detail-card">
-                <h4 class="booking-details-title">QR Code</h4>
-                <div class="booking-qrcode-container" id="qrcode-container"></div>
-                <p class="booking-qrcode-caption">(Click QR Code to zoom)</p>
-            </div>
-            <div class="booking-detail-actions">
-                ${getSmartButton(booking)}
-                <button class="btn btn-secondary" data-action="download-invoice">Download Invoice</button>
-            </div>
+            ${orderInfoHtml}
+            ${serviceTimingHtml}
+            ${pickupDetailsHtml}
+            ${deliveryDetailsHtml}
+            ${paymentInfoHtml}
+            ${otherInfoHtml}
+            ${securityInfoHtml}
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" data-action="download-invoice">Download Invoice</button>
         </div>
     `;
 
@@ -434,6 +381,7 @@ async function showBookingDetailsModal(booking) {
         modal.classList.add('booking-details-modal-overlay');
         document.body.appendChild(modal);
     }
+    
     modal.innerHTML = `<div class="booking-details-modal-content">${modalContent}</div>`;
     modal.style.display = 'flex';
 
@@ -442,8 +390,9 @@ async function showBookingDetailsModal(booking) {
         modal.remove();
     });
 
-    if (typeof QRCode !== 'undefined') {
-        new QRCode(document.getElementById("qrcode-container"), {
+    const qrcodeContainer = modal.querySelector("#qrcode-container");
+    if (qrcodeContainer && typeof QRCode !== 'undefined') {
+        new QRCode(qrcodeContainer, {
             text: booking.id,
             width: 128,
             height: 128,
@@ -451,37 +400,12 @@ async function showBookingDetailsModal(booking) {
             colorLight: "#ffffff",
             correctLevel: QRCode.CorrectLevel.H
         });
-
-        const qrcodeContainer = document.getElementById("qrcode-container");
-        let isZoomed = false;
-        
-        qrcodeContainer.addEventListener('click', () => {
-            if (!isZoomed) {
-                qrcodeContainer.classList.add('zoomed');
-                isZoomed = true;
-            } else {
-                qrcodeContainer.classList.remove('zoomed');
-                isZoomed = false;
-            }
-        });
-
-        document.addEventListener('click', (event) => {
-            if (isZoomed && !qrcodeContainer.contains(event.target) && event.target !== qrcodeContainer) {
-                qrcodeContainer.click();
-            }
-        });
-
-    } else {
-        console.error("QRCode.js library not loaded. Please ensure the script tag is included in your HTML.");
-        document.getElementById("qrcode-container").innerHTML = "<p class='qrcode-error'>QR Code library not loaded.</p>";
     }
 
     modal.querySelector('[data-action="download-invoice"]').addEventListener('click', () => {
         downloadInvoice(booking);
     });
 }
-
-// Function showAddInventoryModal has been removed and replaced with a redirect in renderBookingsList
 
 async function showExtendConfirmationModal(originalBooking) {
     const user = getCurrentUser();
@@ -720,6 +644,81 @@ async function showPayToCheckInModal(bookingToPay) {
     });
 }
 
+async function showCourierDetailsModal(booking) {
+    if (!booking.courierId) {
+        showToast("No courier has been assigned yet.", "info");
+        return;
+    }
+    
+    showLoader(true, 'Fetching courier details...');
+    try {
+        const courierData = await fetchCourierData(booking.courierId);
+        
+        if (!courierData) {
+            showToast("Failed to retrieve courier details.", "error");
+            return;
+        }
+
+        const modalContent = `
+            <div class="booking-details-modal-header">
+                <h3 class="modal-title">Pickup Details</h3>
+                <button type="button" class="close-modal-btn">&times;</button>
+            </div>
+            <div class="booking-details-modal-body">
+                <p><strong>Courier Name:</strong> ${courierData.name || 'N/A'}</p>
+                <p><strong>Courier Phone:</strong> <a href="tel:${courierData.phone}">${courierData.phone || 'N/A'}</a></p>
+                <p><strong>Status:</strong> <span class="booking-status-badge status-active">On the way</span></p>
+                <div class="booking-detail-actions mt-3">
+                    <button id="chat-courier-btn" class="btn btn-primary" data-courier-id="${booking.courierId}">Chat Courier</button>
+                </div>
+            </div>
+        `;
+
+        let detailsModal = document.getElementById('courierDetailsModal');
+        if (!detailsModal) {
+            detailsModal = document.createElement('div');
+            detailsModal.id = 'courierDetailsModal';
+            detailsModal.classList.add('booking-details-modal-overlay');
+            document.body.appendChild(detailsModal);
+        }
+        detailsModal.innerHTML = `<div class="booking-details-modal-content">${modalContent}</div>`;
+        detailsModal.style.display = 'flex';
+
+        detailsModal.querySelector('.close-modal-btn').addEventListener('click', () => {
+            detailsModal.style.display = 'none';
+            detailsModal.remove();
+        });
+
+        detailsModal.querySelector('#chat-courier-btn').addEventListener('click', async () => {
+             const user = getCurrentUser();
+             const courierId = detailsModal.querySelector('#chat-courier-btn').dataset.courierId;
+             if (!user || !courierId) {
+                 showToast("Please log in to chat or courier is not assigned.", 'error');
+                 return;
+             }
+             
+             showLoader(true, 'Creating chat message...');
+             try {
+                const message = `Hello ${courierData.name}, I would like to ask about my pickup order.\n\nOrder Details:\n- Booking ID: ${booking.id}\n- Location: ${booking.locationName}\n- Pickup Time: ${booking.pickupTime}`;
+                await sendMessageToCourierAndAdmin(user.uid, courierId, message);
+                showToast('Message sent successfully!', 'success');
+                detailsModal.style.display = 'none';
+                detailsModal.remove();
+             } catch (error) {
+                console.error("Error sending message:", error);
+                showToast('Failed to send message.', 'error');
+             } finally {
+                showLoader(false);
+             }
+        });
+
+    } catch(error) {
+        console.error("Error fetching courier data:", error);
+        showToast("Failed to retrieve courier details. Please try again.", "error");
+    } finally {
+        showLoader(false);
+    }
+}
 
 async function renderBookingsList(bookings) {
     const container = document.getElementById('bookings-list-container');
@@ -730,7 +729,25 @@ async function renderBookingsList(bookings) {
         return;
     }
 
-    container.innerHTML = bookings.map(booking => {
+    const bookingHtmlPromises = bookings.map(async booking => {
+        const statusNotificationHtml = await getBookingStatusNotification(booking);
+        const actionButtons = await getBookingCardActionButtons(booking);
+        
+        let pickupStatusBadgeHtml = '';
+        if (booking.serviceType === 'pickup' && booking.pickupStatus && booking.bookingStatus !== 'checked_in') {
+            let statusText = (booking.pickupStatus).replace(/_/g, ' ');
+            statusText = statusText.charAt(0).toUpperCase() + statusText.slice(1);
+            
+            const statusClass = `status-${booking.pickupStatus}`;
+
+            pickupStatusBadgeHtml = `
+                <div class="pickup-status-display ${statusClass}">
+                    <i class="fas fa-truck"></i>
+                    <span>${statusText}</span>
+                </div>
+            `;
+        }
+
         return `
             <div class="booking-card">
                 <div class="booking-card-content">
@@ -739,32 +756,44 @@ async function renderBookingsList(bookings) {
                             <h4 class="booking-card-title">${booking.locationName}</h4>
                             <p class="booking-card-info">${booking.storageType} - ${booking.duration}</p>
                             <p class="booking-card-info"><b>${formatDate(booking.startDate)}</b> to <b>${formatDate(booking.endDate)}</b></p>
+                            ${statusNotificationHtml}
                         </div>
                         <span class="booking-status-badge status-${booking.bookingStatus || 'active'}">
                             ${(booking.bookingStatus || 'active').replace(/_/g, ' ')}
                         </span>
                     </div>
                     <div class="booking-actions">
-                        ${getBookingCardActionButtons(booking)}
+                        <div class="action-buttons-group">
+                            ${actionButtons}
+                        </div>
+                        ${pickupStatusBadgeHtml}
                     </div>
                 </div>
             </div>
         `;
-    }).join('');
+    });
+
+    container.innerHTML = (await Promise.all(bookingHtmlPromises)).join('');
 
     document.querySelectorAll('.booking-actions button[data-action]').forEach(button => {
         button.addEventListener('click', async (event) => {
-            const bookingId = event.target.closest('.booking-actions').querySelector('button[data-booking-id]').dataset.bookingId;
+            const actionButtonContainer = event.target.closest('.action-buttons-group');
+            if (!actionButtonContainer) return;
+            
+            const anyButtonWithId = actionButtonContainer.querySelector('button[data-booking-id]');
+            if (!anyButtonWithId) return;
+
+            const bookingId = anyButtonWithId.dataset.bookingId;
             const action = event.target.dataset.action;
             const selectedBooking = bookings.find(b => b.id === bookingId);
 
             if (!selectedBooking) return;
 
-            if (action === 'request_pickup') {
+            if (action === 'request_pickup' || action === 'request_delivery') {
                     showLoader(false);
                     const user = getCurrentUser();
                     if (!user) {
-                        showToast("Please log in to request a pickup.", 'error');
+                        showToast("Please log in to request this service.", 'error');
                         location.hash = '#/auth';
                         return;
                     }
@@ -778,12 +807,13 @@ async function renderBookingsList(bookings) {
                     }
 
                     const minTime = minPickupTime.toTimeString().slice(0, 5);
+                    const serviceType = action.split('_')[1];
 
                     Swal.fire({
-                        title: 'Request Pickup Time',
-                        html: `<p>Select a time for pickup. Minimum time is 3 hours after booking.</p>
+                        title: `Request ${serviceType === 'pickup' ? 'Pickup' : 'Delivery'} Time`,
+                        html: `<p>Select a time for ${serviceType === 'pickup' ? 'pickup' : 'delivery'}. Minimum time is 3 hours after booking.</p>
                                <input type="time" id="pickup-time" class="swal2-input" min="${minTime}">`,
-                        confirmButtonText: 'Confirm Pickup Time',
+                        confirmButtonText: `Confirm ${serviceType === 'pickup' ? 'Pickup' : 'Delivery'} Time`,
                         showCancelButton: true,
                         preConfirm: () => {
                             const pickupTime = document.getElementById('pickup-time').value;
@@ -804,10 +834,14 @@ async function renderBookingsList(bookings) {
                     }).then(async (result) => {
                         if (result.isConfirmed) {
                             const pickupTime = result.value;
-                            showLoader(true, 'Processing your pickup request...');
+                            showLoader(true, `Processing your ${serviceType} request...`);
 
                             try {
-                                await updateBookingStatus(selectedBooking.id, selectedBooking.bookingStatus, { pickupTime: pickupTime, pickupStatus: 'requested' });
+                                const updates = { 
+                                    pickupTime: pickupTime, 
+                                    [`${serviceType}Status`]: 'requested' 
+                                };
+                                await updateBookingStatus(selectedBooking.id, selectedBooking.bookingStatus, updates);
                                 await requestPickup(selectedBooking.locationId, {
                                     bookingId: selectedBooking.id,
                                     userId: user.uid,
@@ -817,11 +851,11 @@ async function renderBookingsList(bookings) {
                                     locationName: selectedBooking.locationName,
                                     timestamp: Date.now()
                                 });
-                                showToast('Pickup request sent successfully!', 'success');
+                                showToast(`${serviceType} request sent successfully!`, 'success');
 
                             } catch (error) {
-                                console.error('Error processing pickup request:', error);
-                                showToast('Failed to send pickup request. Please try again.', 'error');
+                                console.error(`Error processing ${serviceType} request:`, error);
+                                showToast(`Failed to send ${serviceType} request. Please try again.`, 'error');
                             } finally {
                                 showLoader(false);
                             }
@@ -856,6 +890,10 @@ async function renderBookingsList(bookings) {
                     } else if (action === 'review') {
                         showLoader(false);
                         showReviewModal(selectedBooking);
+                        return;
+                    } else if (action === 'view_courier_details') {
+                        showLoader(false);
+                        showCourierDetailsModal(selectedBooking);
                         return;
                     }
                 } catch (error) {

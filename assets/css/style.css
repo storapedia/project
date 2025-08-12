@@ -2906,3 +2906,80 @@ body {
     text-align: center;
     padding: 1rem;
 }
+
+
+
+/* -- assets/css/main.css -- */
+
+/* Membuat container aksi menggunakan flexbox */
+.booking-actions {
+    display: flex;
+    justify-content: space-between; /* Menyebar elemen ke sisi berlawanan */
+    align-items: center;            /* Menyelaraskan secara vertikal */
+    flex-wrap: wrap;                /* Memastikan wrap di layar kecil */
+    gap: 0.75rem;                   /* Jarak antar elemen */
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #eee;
+}
+
+/* Grup untuk tombol-tombol aksi */
+.action-buttons-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+/* Styling untuk badge status pickup */
+.pickup-status-display {
+    padding: 0.4rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: 1px solid transparent;
+}
+
+/* Pewarnaan badge berdasarkan status */
+.pickup-status-display.status-requested {
+    background-color: #fff8e1;
+    color: #f59e0b;
+    border-color: #f59e0b;
+}
+
+.pickup-status-display.status-picked_up {
+    background-color: #e0f2fe;
+    color: #3b82f6;
+    border-color: #3b82f6;
+}
+
+.pickup-status-display.status-completed {
+    background-color: #dcfce7;
+    color: #22c55e;
+    border-color: #22c55e;
+}
+
+/* Floating WhatsApp Button */
+.floating-whatsapp {
+    position: fixed;
+    bottom: 70px;
+    right: 20px;
+    background-color: #25d366;
+    color: white;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    z-index: 1000;
+    transition: transform 0.3s ease;
+}
+
+.floating-whatsapp:hover {
+    transform: scale(1.1);
+}

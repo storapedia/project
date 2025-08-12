@@ -1,4 +1,3 @@
-// Di awal file js/reviews.js atau di mana pun handleReviewReply didefinisikan
 window.handleReviewReply = async function(e, locationId, reviewId, userId) {
     const user = allUsers[userId];
     if (!user) return Swal.fire('Error', 'User not found for this review.', 'error');

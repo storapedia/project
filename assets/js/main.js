@@ -26,6 +26,33 @@ let userNotificationSound = new Audio('/assets/sounds/notification.wav');
 let lastUserNotificationCount = 0;
 let hasUserInteracted = false;
 
+// --- CSS Loading Logic ---
+/**
+ * Memuat stylesheet yang sesuai berdasarkan ukuran layar.
+ * style.css untuk mobile dan style2.css untuk desktop.
+ */
+function loadDynamicStyles() {
+    const existingLink = document.getElementById('dynamic-stylesheet');
+    if (existingLink) {
+        existingLink.remove();
+    }
+
+    const link = document.createElement('link');
+    link.id = 'dynamic-stylesheet';
+    link.rel = 'stylesheet';
+
+    if (window.innerWidth >= 1024) {
+        // Desktop
+        link.href = '/assets/css/style2.css'; // Ganti dengan path yang benar jika perlu
+    } else {
+        // Mobile
+        link.href = '/assets//css/style.css'; // Ganti dengan path yang benar jika perlu
+    }
+
+    document.head.appendChild(link);
+}
+
+
 // --- PWA Installation Logic ---
 function setupInstallBanner() {
     let deferredPrompt;
@@ -108,7 +135,6 @@ function loadGoogleMapsScript() {
  * Google calls this function after the script has finished loading.
  */
 window.storamaps_initMap = function() {
-    console.log("✅ Google Maps API is loaded and ready.");
     // Set a global flag to indicate that the API is safe to use.
     window.isGoogleMapsReady = true;
 };
@@ -152,6 +178,7 @@ function listenForUserNotifications(userId) {
 function handleResize() {
     const isDesktop = window.innerWidth >= 1024;
     renderAppShell(document.getElementById('app'), isDesktop);
+    loadDynamicStyles(); // Panggil fungsi style saat resize
     router();
 }
 
@@ -160,6 +187,7 @@ async function main() {
         const appRoot = document.getElementById('app');
         
         renderAppShell(appRoot, window.innerWidth >= 1024);
+        loadDynamicStyles(); // Panggil fungsi style saat pertama kali load
         window.addEventListener('resize', handleResize);
         setupInstallBanner();
 

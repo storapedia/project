@@ -1,11 +1,3 @@
-// =====================================================================
-// BOOKINGS LOGIC
-// =====================================================================
-
-/**
- * Merender tabel dan tampilan kartu untuk semua pemesanan.
- * Mendukung filter berdasarkan pencarian, status, layanan, dan lokasi.
- */
 function renderBookingsTable() {
     const tbody = document.getElementById('bookings-table-body');
     const cardView = document.getElementById('bookings-card-view');
@@ -13,34 +5,34 @@ function renderBookingsTable() {
     const statusFilter = document.getElementById('booking-status-filter').value;
     const locationFilter = document.getElementById('booking-location-filter').value;
     const serviceTypeFilter = document.getElementById('booking-service-type-filter').value;
-
+    
     tbody.innerHTML = '';
     cardView.innerHTML = '';
-
+    
     const filtered = (allBookings || []).filter(b => {
         if (!b || !b.id) return false;
-
+        
         const user = allUsers[b.userId];
         const userName = user?.name || '';
         const userEmail = user?.email || '';
-
+        
         const searchCorpus = `${userName} ${userEmail} ${b.id} ${b.locationName || ''} ${b.storageType || ''} ${b.courierName || ''}`.toLowerCase();
-
+        
         const matchesSearch = !searchTerm || searchCorpus.includes(searchTerm);
         const matchesStatus = !statusFilter || b.bookingStatus === statusFilter;
         const matchesLocation = !locationFilter || b.locationId === locationFilter;
         const matchesServiceType = !serviceTypeFilter || b.serviceType === serviceTypeFilter;
-
+        
         return matchesSearch && matchesStatus && matchesLocation && matchesServiceType;
     });
-
+    
     if (filtered.length === 0) {
         const noResultsHtml = `<tr><td colspan="5" class="text-center p-8 text-gray-500">No bookings found matching your criteria.</td></tr>`;
         tbody.innerHTML = noResultsHtml;
         cardView.innerHTML = `<p class="text-center text-gray-500 p-4">No bookings found matching your criteria.</p>`;
         return;
     }
-
+    
     filtered.forEach(b => {
         const user = allUsers[b.userId];
         const userNameDisplay = user?.name || `<span class="text-red-500">Unknown User</span>`;
@@ -52,10 +44,8 @@ function renderBookingsTable() {
         if (b.bookingStatus === 'active' || b.bookingStatus === 'processing_by_courier') statusClass = 'bg-blue-100 text-blue-800';
         if (b.bookingStatus === 'checked_in') statusClass = 'bg-green-100 text-green-800';
         if (b.bookingStatus === 'completed') statusClass = 'bg-purple-100 text-purple-800';
-        if (b.bookingStatus === 'cancelled') statusClass = 'bg-red-100 text-red-800';
         if (b.paymentStatus === 'pending') statusClass = 'bg-yellow-100 text-yellow-800';
-
-        // Table Row for Desktop
+        
         const row = document.createElement('tr');
         row.className = 'bg-white border-b hover:bg-gray-50';
         row.innerHTML = `
@@ -72,14 +62,13 @@ function renderBookingsTable() {
             <td class="px-6 py-4 space-x-2">
                 <button class="text-blue-600 hover:text-blue-900" title="View Details" onclick="viewBookingDetails('${b.id}')"><i class="fas fa-eye"></i></button>
                 <button class="text-primary-600 hover:text-primary-800" title="Edit Booking" onclick="openEditBookingModal('${b.id}')"><i class="fas fa-edit"></i></button>
-                ${b.serviceType === 'pickup' && (b.bookingStatus === 'active' || b.bookingStatus === 'requested') ? `<button class="text-purple-600 hover:text-purple-900" title="Assign Courier" onclick="handlePickupRequest('${b.id}')"><i class="fas fa-truck-fast"></i></button>` : ''}
+                ${b.serviceType === 'pickup' && b.pickupStatus !== 'completed' ? `<button class="text-purple-600 hover:text-purple-900" title="Assign Courier" onclick="handlePickupRequest('${b.id}')"><i class="fas fa-truck-fast"></i></button>` : ''}
                 ${b.bookingStatus === 'active' || b.bookingStatus === 'processing_by_courier' ? `<button class="text-green-600 hover:text-green-900" title="Check In" onclick="handleCheckIn('${b.id}')"><i class="fas fa-sign-in-alt"></i></button>` : ''}
                 ${b.bookingStatus === 'checked_in' ? `<button class="text-red-600 hover:text-red-900" title="Check Out" onclick="handleCheckOut('${b.id}', '${b.locationId}')"><i class="fas fa-sign-out-alt"></i></button>` : ''}
             </td>
         `;
         tbody.appendChild(row);
-
-        // Card View for Mobile
+        
         const card = document.createElement('div');
         card.className = 'data-card';
         card.innerHTML = `
@@ -110,7 +99,7 @@ function renderBookingsTable() {
             <div class="card-actions">
                 <button class="text-blue-600 hover:text-blue-900" onclick="viewBookingDetails('${b.id}')"><i class="fas fa-eye"></i> View</button>
                 <button class="text-primary-600 hover:text-primary-800" onclick="openEditBookingModal('${b.id}')"><i class="fas fa-edit"></i> Edit</button>
-                ${b.serviceType === 'pickup' && (b.bookingStatus === 'active' || b.bookingStatus === 'requested') ? `<button class="text-purple-600 hover:text-purple-900" title="Assign Courier" onclick="handlePickupRequest('${b.id}')"><i class="fas fa-truck-fast"></i> Assign</button>` : ''}
+                ${b.serviceType === 'pickup' && b.pickupStatus !== 'completed' ? `<button class="text-purple-600 hover:text-purple-900" title="Assign Courier" onclick="handlePickupRequest('${b.id}')"><i class="fas fa-truck-fast"></i> Assign</button>` : ''}
                 ${b.bookingStatus === 'active' || b.bookingStatus === 'processing_by_courier' ? `<button class="text-green-600 hover:text-green-900" onclick="handleCheckIn('${b.id}')"><i class="fas fa-sign-in-alt"></i> Check In</button>` : ''}
                 ${b.bookingStatus === 'checked_in' ? `<button class="text-red-600 hover:text-red-900" onclick="handleCheckOut('${b.id}', '${b.locationId}')"><i class="fas fa-sign-out-alt"></i> Check Out</button>` : ''}
             </div>
@@ -119,11 +108,6 @@ function renderBookingsTable() {
     });
 }
 
-
-/**
- * Membuka modal non-editable untuk melihat detail pemesanan.
- * @param {string} bookingId ID pemesanan.
- */
 async function viewBookingDetails(bookingId) {
     const booking = allBookings.find(b => b.id === bookingId);
     if (!booking) return Swal.fire('Error', 'Booking not found.', 'error');
@@ -172,10 +156,6 @@ async function viewBookingDetails(bookingId) {
     });
 }
 
-/**
- * Menangani proses check-in untuk pemesanan.
- * @param {string} bookingId ID pemesanan.
- */
 function handleCheckIn(bookingId) {
     Swal.fire({
         title: 'Confirm Check-In?',
@@ -192,11 +172,6 @@ function handleCheckIn(bookingId) {
     });
 }
 
-/**
- * Menangani proses check-out untuk pemesanan.
- * @param {string} bookingId ID pemesanan.
- * @param {string} locationId ID lokasi penyimpanan.
- */
 function handleCheckOut(bookingId, locationId) {
     Swal.fire({
         title: 'Confirm Check-Out?',
@@ -210,11 +185,7 @@ function handleCheckOut(bookingId, locationId) {
             db.ref(`bookings/${bookingId}`).update({ bookingStatus: 'completed', checkOutTime: firebase.database.ServerValue.TIMESTAMP })
                 .then(() => {
                     if(locationId && allLocations.find(loc => loc.id === locationId)) {
-                        // Logika untuk mengembalikan kapasitas penyimpanan tidak disertakan karena struktur data yang tidak jelas.
-                        // Akan lebih baik jika kapasitas disimpan per tipe unit, bukan total.
-                        // db.ref(`storageLocations/${locationId}/capacity`).transaction(currentCapacity => {
-                        //     return (currentCapacity || 0) + 1; // Contoh: Tambah kapasitas
-                        // });
+                        
                     }
                     Swal.fire('Success', 'Booking has been checked-out.', 'success');
                 })
@@ -223,23 +194,21 @@ function handleCheckOut(bookingId, locationId) {
     });
 }
 
-
-/**
- * Membuka modal untuk mengedit detail pemesanan.
- * @param {string} bookingId ID pemesanan.
- */
 async function openEditBookingModal(bookingId) {
     const booking = allBookings.find(b => b.id === bookingId);
     if (!booking) {
         return Swal.fire('Error', 'Booking not found.', 'error');
     }
     const user = allUsers[booking.userId];
+    if (!user) {
+        return Swal.fire('Error', 'User data not found for this booking.', 'error');
+    }
 
     const modal = document.getElementById('edit-booking-modal');
     modal.classList.remove('hidden');
 
     document.getElementById('edit-booking-id').value = booking.id;
-    document.getElementById('edit-booking-user-name').value = user?.name || 'N/A';
+    document.getElementById('edit-booking-user-name').value = user.name || 'N/A';
     document.getElementById('edit-booking-location-name').value = booking.locationName || 'N/A';
     document.getElementById('edit-booking-storage-type').value = booking.storageType || 'N/A';
     document.getElementById('edit-booking-start-date').value = booking.startDate ? new Date(booking.startDate).toISOString().split('T')[0] : '';
@@ -328,7 +297,18 @@ async function openEditBookingModal(bookingId) {
 
         try {
             await db.ref(`bookings/${bookingId}`).update(updatedBookingData);
-            Swal.fire('Success', 'Booking updated successfully!', 'success');
+            
+            const notificationData = {
+                title: 'Booking Updated',
+                body: `Your booking ID ${bookingId} has been updated by an admin.`,
+                type: 'booking_update',
+                bookingId: bookingId,
+                timestamp: firebase.database.ServerValue.TIMESTAMP,
+                read: false
+            };
+            await db.ref(`notifications/users/${booking.userId}`).push(notificationData);
+
+            Swal.fire('Success', 'Booking updated successfully! Notification sent to user.', 'success');
             modal.classList.add('hidden');
         } catch (error) {
             console.error("Booking update failed:", error);
@@ -338,16 +318,17 @@ async function openEditBookingModal(bookingId) {
 }
 
 
-/**
- * Menangani permintaan penjemputan untuk pemesanan (assign courier).
- * @param {string} bookingId ID pemesanan.
- */
 async function handlePickupRequest(bookingId) {
+    if (!bookingId) {
+        return Swal.fire('Error', 'Invalid booking ID.', 'error');
+    }
     const booking = allBookings.find(b => b.id === bookingId);
+    if (!booking) {
+        return Swal.fire('Error', `Booking with ID ${bookingId} not found.`, 'error');
+    }
     const user = allUsers[booking.userId];
-
-    if (!booking || !user) {
-        return Swal.fire('Error', 'Booking or user data not found.', 'error');
+    if (!user) {
+        return Swal.fire('Error', 'User data not found for this booking.', 'error');
     }
 
     const courierOptionsHtml = Object.entries(allCouriers || {}).map(([id, courier]) =>
@@ -355,11 +336,10 @@ async function handlePickupRequest(bookingId) {
     ).join('');
 
     const locationData = allLocations.find(loc => loc.id === booking.locationId);
-    const geolocation = booking.geolocation || locationData?.geolocation;
+    const geolocation = booking.pickupGeolocation || locationData?.geolocation;
     
-    // Ganti URL Google Maps dengan URL yang valid.
     const directionsUrl = geolocation ?
-        `https://www.google.com/maps/dir/?api=1&destination=${geolocation.latitude},${geolocation.longitude}` : '#';
+        `http://maps.google.com/?q=${geolocation.latitude},${geolocation.longitude}` : '#';
 
     await Swal.fire({
         title: 'Assign Courier for Pickup',
@@ -426,22 +406,34 @@ async function handlePickupRequest(bookingId) {
             const courier = allCouriers[courierId];
             Swal.fire({ title: 'Processing...', text: `Assigning ${courier.name}...`, allowOutsideClick: false, didOpen: () => Swal.showLoading() });
             try {
+                // Update the booking status
                 await db.ref(`bookings/${bookingId}`).update({
-                    bookingStatus: 'processing_by_courier',
+                    pickupStatus: 'processing_by_courier',
                     courierId: courierId,
                     courierName: courier.name
                 });
-
-                const pickupSnapshot = await db.ref(`pickupRequests/${booking.locationId}`).orderByChild('bookingId').equalTo(bookingId).once('value');
+                
+                // Find and update the pickup request status
+                const pickupSnapshot = await db.ref(`pickupRequests/${booking.locationId}`).orderByChild('id').equalTo(bookingId).once('value');
                 if (pickupSnapshot.exists()) {
                     const pickupRequestId = Object.keys(pickupSnapshot.val())[0];
                     await db.ref(`pickupRequests/${booking.locationId}/${pickupRequestId}`).update({
-                        status: 'processing_by_courier',
+                        pickupStatus: 'processing_by_courier',
                         courierId: courierId
                     });
                 }
-                const chatMessage = `New pickup assigned! Booking ID: ${booking.id}, Customer: ${user.name}, Address: ${booking.pickupAddress}, Time: ${booking.pickupTime}. Directions: ${directionsUrl}`;
-                console.log(`(Simulated) Chat sent to ${courier.name}: ${chatMessage}`);
+                
+                // Send a notification to the user
+                const notificationData = {
+                    title: 'Pickup Assigned',
+                    body: `A courier has been assigned for your booking ${booking.id}. Courier: ${courier.name}.`,
+                    type: 'pickup_assigned',
+                    bookingId: booking.id,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP,
+                    read: false
+                };
+                await db.ref(`notifications/users/${booking.userId}`).push(notificationData);
+                
                 Swal.fire('Assigned!', `${courier.name} has been assigned and notified.`, 'success');
             } catch (error) {
                 console.error("Failed to assign courier:", error);

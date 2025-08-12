@@ -1,19 +1,82 @@
-// Di awal file js/reviews.js atau di mana pun handleReviewReply didefinisikan
 window.handleReviewReply = async function(e, locationId, reviewId, userId) {
-    // ... kode yang sudah ada untuk membalas review
+    const user = allUsers[userId];
+    if (!user) return Swal.fire('Error', 'User not found for this review.', 'error');
+    
+    const { value: replyText } = await Swal.fire({
+        title: `Reply to Review from ${user.name}`,
+        input: 'textarea',
+        inputPlaceholder: 'Type your reply here...',
+        showCancelButton: true,
+        confirmButtonText: 'Send Reply',
+        customClass: {
+            popup: 'swal2-popup-custom-width'
+        }
+    });
+
+    if (replyText) {
+        try {
+            const adminId = auth.currentUser ? auth.currentUser.uid : 'admin_default_id'; 
+            const adminName = auth.currentUser ? (allUsers[adminId]?.name || 'Admin') : 'Admin'; 
+
+            const replyRef = db.ref(`reviews/${locationId}/${reviewId}/replies`).push(); 
+            await replyRef.set({
+                userId: adminId,
+                name: adminName,
+                text: replyText,
+                timestamp: firebase.database.ServerValue.TIMESTAMP
+            });
+            Swal.fire('Success', 'Reply sent successfully!', 'success');
+        } catch (error) {
+            Swal.fire('Error', 'Failed to send reply.', 'error');
+        }
+    }
 };
 
-// Di awal file js/bookings.js
 window.viewBookingDetails = async function(bookingId) {
-    // ... kode yang sudah ada untuk melihat detail booking
+    const booking = allBookings.find(b => b.id === bookingId);
+    if (!booking) return Swal.fire('Error', 'Booking not found.', 'error');
+    const user = allUsers[booking.userId];
+    const sealPhotoHtml = booking.sealPhotoUrl ? `<img src="${booking.sealPhotoUrl}" class="w-full h-auto max-w-sm mx-auto rounded-lg shadow-md border my-4">` : '<p class="text-center text-gray-500 bg-gray-100 p-4 rounded-lg my-4">No seal photo uploaded.</p>';
+    
+    Swal.fire({
+        title: 'Booking Details',
+        html: `
+            <div class="text-left space-y-4">
+                <div>
+                    <h3 class="font-bold text-lg">${user?.name || 'Unknown User'}</h3>
+                    <p class="text-sm text-gray-500">${user?.email || 'N/A'} | ${user?.phone || 'N/A'}</p>
+                </div>
+                <div class="border-t pt-4">
+                    <p><strong class="w-32 inline-block">Booking ID:</strong> ${booking.id}</p>
+                    <p><strong class="w-32 inline-block">Location:</strong> ${booking.locationName || 'N/A'}</p>
+                    <p><strong class="w-32 inline-block">Unit Type:</strong> ${booking.storageType || 'N/A'}</p>
+                    <p><strong class="w-32 inline-block">Period:</strong> ${booking.startDate ? new Date(booking.startDate).toLocaleDateString('en-US') : 'N/A'} - ${booking.endDate ? new Date(booking.endDate).toLocaleDateString('en-US') : 'N/A'}</p>
+                    <p><strong class="w-32 inline-block">Total Price:</strong> ${currencyFormatter.format(booking.totalPrice || 0)}</p>
+                    <p><strong class="w-32 inline-block">Payment Method:</strong> ${booking.paymentMethod?.replace(/_/g, ' ') || 'N/A'}</p>
+                    <p><strong class="w-32 inline-block">Payment Status:</strong> ${booking.paymentStatus?.replace(/_/g, ' ') || 'N/A'}</p>
+                    <p><strong class="w-32 inline-block">Service Type:</strong> ${booking.serviceType?.replace(/_/g, ' ') || 'N/A'}</p>
+                </div>
+                <div class="border-t pt-4">
+                    <h4 class="font-semibold mb-2">Seal Details:</h4>
+                    <p><strong class="w-32 inline-block">Seal Number:</strong> ${booking.sealNumber || 'Not set'}</p>
+                    <div class="mt-2">
+                        <h5 class="font-medium text-sm">Seal Photo:</h5>
+                        ${sealPhotoHtml}
+                    </div>
+                </div>
+            </div>
+        `,
+        width: '600px',
+        showCloseButton: true,
+        showConfirmButton: false
+    });
 };
 
-// Di awal file js/inbox.js
 window.openDirectMessageModal = function(userId) {
-    // ... kode yang sudah ada untuk membuka chat
-};// =====================================================================
-// INBOX (CHAT) LOGIC
-// =====================================================================
+    showPage('inbox');
+    openChatWindow(userId);
+};
+
 function fetchAndRenderConversations(forceRender = false) {
     allConversations = [];
     let totalUnread = 0;
@@ -105,7 +168,6 @@ function openChatWindow(userId) {
 
     const messagesRef = db.ref(`chats/${userId}/messages`);
     
-    // Mark messages as read
     messagesRef.once('value', snapshot => {
         const updates = {};
         snapshot.forEach(child => {

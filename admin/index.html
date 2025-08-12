@@ -23,6 +23,7 @@
 </head>
 
 
+<body>
     <div id="login-screen" class="fixed inset-0 bg-gray-900 flex items-center justify-center z-[200]">
         <div class="w-full max-w-md bg-white p-8 rounded-xl shadow-2xl">
             <h2 class="text-3xl font-bold text-center text-gray-800 mb-8">Admin Panel Login</h2>
@@ -63,7 +64,6 @@
                     <a href="#locations" class="sidebar-link flex items-center px-4 py-3 rounded-lg" data-page="locations"><i class="fas fa-map-marked-alt fa-fw mr-3 w-5 text-center"></i>Locations</a>
                     <a href="#vouchers" class="sidebar-link flex items-center px-4 py-3 rounded-lg" data-page="vouchers"><i class="fas fa-tags fa-fw mr-3 w-5 text-center"></i>Vouchers</a>
                     <a href="#reviews" class="sidebar-link flex items-center px-4 py-3 rounded-lg" data-page="reviews"><i class="fas fa-star fa-fw mr-3 w-5 text-center"></i>Reviews & Testimonials</a>
-                    <a href="#faqs" class="sidebar-link flex items-center px-4 py-3 rounded-lg" data-page="faqs"><i class="fas fa-question-circle fa-fw mr-3 w-5 text-center"></i>FAQs</a>
                     <a href="#settings" class="sidebar-link flex items-center px-4 py-3 rounded-lg" data-page="settings"><i class="fas fa-cogs fa-fw mr-3 w-5 text-center"></i>Settings</a>
                 </nav>
                 <div class="p-4 border-t border-gray-700 bg-gray-800">
@@ -78,27 +78,23 @@
                     <button id="mobile-menu-btn" class="md:hidden text-gray-600 text-2xl p-2 rounded-md hover:bg-gray-100"><i class="fas fa-bars"></i></button>
                     <h2 id="page-title" class="text-2xl font-bold text-gray-800 flex-grow text-center md:text-left ml-4">Dashboard</h2>
                     <div class="flex items-center space-x-4">
-
-
-    <div id="notification-area" class="relative">
-  <button id="notification-button" class="text-gray-600 hover:text-primary-600 text-2xl relative">
-      <i class="fas fa-bell"></i>
-      <span id="notification-count" class="notification-badge">0</span>
-  </button>
-  <div id="notification-popup" class="hidden absolute right-0 mt-2 w-80 bg-white rounded-md shadow-xl z-50 border border-gray-100 p-4 max-h-[400px] overflow-y-auto">
-      <div class="flex justify-between items-center mb-2">
-         <h3 class="font-bold text-lg">Notifications</h3>
-         <button id="mark-all-read-btn" class="text-xs text-blue-500 hover:underline">Mark all as read</button>
-      </div>
-      <div id="notification-list" class="space-y-3"><p class="text-gray-500 text-sm">No new notifications.</p></div>
-  </div>
-</div>
-
-
+                        <div id="notification-area" class="relative">
+                            <button id="notification-button" class="text-gray-600 hover:text-primary-600 text-2xl relative">
+                                <i class="fas fa-bell"></i>
+                                <span id="notification-count" class="notification-badge">0</span>
+                            </button>
+                            <div id="notification-popup" class="hidden absolute right-0 mt-2 w-80 bg-white rounded-md shadow-xl z-50 border border-gray-100 p-4 max-h-[400px] overflow-y-auto">
+                                <div class="flex justify-between items-center mb-2">
+                                   <h3 class="font-bold text-lg">Notifications</h3>
+                                   <button id="mark-all-read-btn" class="text-xs text-blue-500 hover:underline">Mark all as read</button>
+                                </div>
+                                <div id="notification-list" class="space-y-3"><p class="text-gray-500 text-sm">No new notifications.</p></div>
+                            </div>
+                        </div>
                         <button id="scan-qr-btn" class="bg-gradient-to-r from-green-500 to-green-600 text-black font-bold py-2 px-4 rounded-full shadow-md hover:from-green-600 hover:to-green-700 transition flex items-center gap-2">
                             <i class="fas fa-qrcode"></i> <span class="hidden sm:inline">Scan & Check-In</span>
                         </button>
-    <div id="admin-user-info" class="text-right" style="display: none;"></div>
+                        <div id="admin-user-info" class="text-right" style="display: none;"></div>
                     </div>
                 </header>
 
@@ -108,21 +104,17 @@
                             <div class="stat-card bg-white p-6 rounded-xl shadow-md border-l-4 border-primary-500">
                                 <div class="flex items-center justify-between">
                                     <div>
-                                        <p class="text-sm font-medium text-gray-500 flex items-center gap-2">Total Revenue     <button class="stat-view-btn-wrapper text-gray-400 hover:text-primary-500 cursor-pointer" onclick="showRevenueDetails()">
-        <i class="fas fa-eye"></i>
-    </button></p>
+                                        <p class="text-sm font-medium text-gray-500 flex items-center gap-2">Total Revenue <button class="stat-view-btn-wrapper text-gray-400 hover:text-primary-500 cursor-pointer" onclick="showRevenueDetails()"><i class="fas fa-eye"></i></button></p>
                                         <p id="stat-revenue" class="text-3xl font-bold text-gray-800">Loading...</p>
+                                        <p id="stat-revenue-growth" class="text-xs text-gray-500 mt-1"></p>
                                     </div>
-
                                     <div class="bg-primary-100 text-primary-500 w-12 h-12 rounded-full flex items-center justify-center text-xl shadow-inner"><i class="fas fa-dollar-sign"></i></div>
                                 </div>
                             </div>
                             <div class="stat-card bg-white p-6 rounded-xl shadow-md border-l-4 border-green-500">
                                 <div class="flex items-center justify-between">
                                     <div>
-                                        <p class="text-sm font-medium text-gray-500 flex items-center gap-2">Active Bookings     <button class="stat-view-btn-wrapper text-gray-400 hover:text-primary-500 cursor-pointer" onclick="showActiveBookingsDetails()">
-        <i class="fas fa-eye"></i>
-    </button></p>
+                                        <p class="text-sm font-medium text-gray-500 flex items-center gap-2">Active Bookings <button class="stat-view-btn-wrapper text-gray-400 hover:text-primary-500 cursor-pointer" onclick="showActiveBookingsDetails()"><i class="fas fa-eye"></i></button></p>
                                         <p id="stat-active-bookings" class="text-3xl font-bold text-gray-800">Loading...</p>
                                     </div>
                                     <div class="bg-green-100 text-green-500 w-12 h-12 rounded-full flex items-center justify-center text-xl shadow-inner"><i class="fas fa-check-double"></i></div>
@@ -140,21 +132,31 @@
                              <div class="stat-card bg-white p-6 rounded-xl shadow-md border-l-4 border-purple-500">
                                 <div class="flex items-center justify-between">
                                     <div>
-                                        <p class="text-sm font-medium text-gray-500 flex items-center gap-2">Total Capacity     <button class="stat-view-btn-wrapper text-gray-400 hover:text-primary-500 cursor-pointer" onclick="showCapacityDetails()">
-        <i class="fas fa-eye"></i>
-    </button></p>
+                                        <p class="text-sm font-medium text-gray-500 flex items-center gap-2">Total Capacity <button class="stat-view-btn-wrapper text-gray-400 hover:text-primary-500 cursor-pointer" onclick="showCapacityDetails()"><i class="fas fa-eye"></i></button></p>
                                         <p id="stat-total-capacity" class="text-3xl font-bold text-gray-800">Loading...</p>
                                     </div>
                                     <div class="bg-purple-100 text-purple-500 w-12 h-12 rounded-full flex items-center justify-center text-xl shadow-inner"><i class="fas fa-warehouse"></i></div>
                                 </div>
                             </div>
                         </div>
-                        <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
-                            <div class="lg:col-span-3 bg-white p-6 rounded-xl shadow-md">
+                        
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                            <div class="bg-white p-6 rounded-xl shadow-md">
                                 <h3 class="text-xl font-bold mb-4">Revenue Overview</h3>
-                                <div id="revenue-chart-container" class="relative h-96"><canvas id="revenue-chart"></canvas></div>
+                                <div class="relative h-96"><canvas id="revenue-chart"></canvas></div>
                             </div>
-                            <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md">
+                            <div class="bg-white p-6 rounded-xl shadow-md">
+                                <h3 class="text-xl font-bold mb-4">Bookings by Location</h3>
+                                <div class="relative h-96"><canvas id="bookings-location-chart"></canvas></div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                            <div class="bg-white p-6 rounded-xl shadow-md">
+                                <h3 class="text-xl font-bold mb-4">Bookings by Storage Type</h3>
+                                <div class="relative h-96"><canvas id="bookings-type-chart"></canvas></div>
+                            </div>
+                             <div class="bg-white p-6 rounded-xl shadow-md">
                                 <h3 class="text-xl font-bold mb-4">Action Center</h3>
                                 <div class="space-y-4">
                                     <div>
@@ -166,6 +168,17 @@
                                         <div id="overdue-checkout-list" class="mt-2 text-sm space-y-2 max-h-40 overflow-y-auto pr-2"></div>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <div class="bg-white p-6 rounded-xl shadow-md">
+                                <h3 class="text-xl font-bold mb-4">Recent Bookings</h3>
+                                <div id="recent-bookings-list" class="space-y-3 max-h-[300px] overflow-y-auto"></div>
+                            </div>
+                            <div class="bg-white p-6 rounded-xl shadow-md">
+                                <h3 class="text-xl font-bold mb-4">Recent Reviews</h3>
+                                <div id="recent-reviews-list" class="space-y-3 max-h-[300px] overflow-y-auto"></div>
                             </div>
                         </div>
                     </div>
@@ -285,9 +298,14 @@
                     </div>
                     <div id="page-locations" class="admin-page">
                         <div class="bg-white p-6 rounded-xl shadow-md">
-                            <div class="flex justify-between items-center mb-4">
+                            <div class="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
                                 <h3 class="text-xl font-bold text-gray-800">Manage Locations</h3>
-                                <button id="add-location-btn" class="bg-gradient-to-r from-primary-500 to-primary-600 text-black font-bold py-2 px-4 rounded-full shadow-md hover:from-primary-600 hover:to-primary-700 transition flex items-center gap-2"><i class="fas fa-plus"></i> Add New Location</button>
+                                <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                                    <button id="manage-storage-types-btn" class="bg-blue-500 text-white font-bold py-2 px-4 rounded-full shadow-md hover:bg-blue-600 transition flex items-center justify-center gap-2">
+                                        <i class="fas fa-box"></i> Manage Storage Types
+                                    </button>
+                                    <button id="add-location-btn" class="bg-gradient-to-r from-primary-500 to-primary-600 text-black font-bold py-2 px-4 rounded-full shadow-md hover:from-primary-600 hover:to-primary-700 transition flex items-center justify-center gap-2"><i class="fas fa-plus"></i> Add New Location</button>
+                                </div>
                             </div>
                             <div class="overflow-x-auto hidden md:table w-full"> 
                                 <table class="min-w-full text-sm text-left text-gray-500 border-collapse">
@@ -371,47 +389,61 @@
                             <h3 class="text-2xl font-bold mb-6 border-b pb-4">Website Settings</h3>
                             <form id="website-settings-form" class="space-y-8">
                                 <div class="p-6 border border-gray-200 rounded-xl">
-                                    <h4 class="font-semibold text-xl mb-4">Homepage Banner</h4>
-                                    <div class="flex items-center gap-4 mb-4">
-                                        <img id="setting-banner-preview" src="https://placehold.co/200x100" class="w-48 h-auto rounded-lg shadow-md cursor-pointer">
-                                        <div>
-                                            <label for="setting-banner-image-upload" class="cursor-pointer bg-blue-500 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-blue-600">
-                                                Upload Image
-                                            </label>
-                                            <input id="setting-banner-image-upload" type="file" class="hidden" accept="image/*">
-                                            <p class="text-xs text-gray-500 mt-2">Or paste an image URL below.</p>
+                                    <h4 class="font-bold text-xl mb-4 cursor-pointer" onclick="toggleSection(this)">▼ Homepage Banner</h4>
+                                    <div class="setting-content space-y-4">
+                                        <div class="flex items-center gap-4 mb-4">
+                                            <img id="setting-banner-preview" src="https://placehold.co/200x100" class="w-48 h-auto rounded-lg shadow-md cursor-pointer">
+                                            <div>
+                                                <label for="setting-banner-image-upload" class="cursor-pointer bg-blue-500 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-blue-600">
+                                                    Upload Image
+                                                </label>
+                                                <input id="setting-banner-image-upload" type="file" class="hidden" accept="image/*">
+                                                <p class="text-xs text-gray-500 mt-2">Or paste an image URL below.</p>
+                                            </div>
                                         </div>
+                                        <input id="setting-banner-title" class="swal2-input mb-3 border border-gray-300 rounded-lg focus:ring-primary-500" placeholder="Banner Title">
+                                        <textarea id="setting-banner-subtitle" class="swal2-textarea border border-gray-300 rounded-lg focus:ring-primary-500" placeholder="Banner Subtitle"></textarea>
+                                        <input id="setting-banner-imageUrl" class="swal2-input border border-gray-300 rounded-lg focus:ring-primary-500" placeholder="Banner Image URL">
                                     </div>
-                                    <input id="setting-banner-title" class="swal2-input mb-3 border border-gray-300 rounded-lg focus:ring-primary-500" placeholder="Banner Title">
-                                    <textarea id="setting-banner-subtitle" class="swal2-textarea border border-gray-300 rounded-lg focus:ring-primary-500" placeholder="Banner Subtitle"></textarea>
-                                    <input id="setting-banner-imageUrl" class="swal2-input border border-gray-300 rounded-lg focus:ring-primary-500" placeholder="Banner Image URL">
                                 </div>
+                                <hr>
                                 <div class="p-6 border border-gray-200 rounded-xl">
-                                    <h4 class="font-semibold text-xl mb-4">Service Fees</h4>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Pickup Fee ($)</label>
-                                    <input id="setting-pricing-pickupFee" type="number" class="swal2-input border border-gray-300 rounded-lg focus:ring-primary-500" placeholder="Pickup Fee" value="0">
+                                    <h4 class="font-bold text-xl mb-4 cursor-pointer" onclick="toggleSection(this)">▼ Service Fees</h4>
+                                    <div class="setting-content space-y-4">
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Pickup Fee ($) (Flat Rate) </label>
+                                        <input id="setting-pricing-pickupFee" type="number" class="swal2-input border border-gray-300 rounded-lg focus:ring-primary-500 mb-3" placeholder="Pickup Fee" value="0">
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Per Km Fee ($)</label>
+                                        <input id="setting-pricing-kmFee" type="number" class="swal2-input border border-gray-300 rounded-lg focus:ring-primary-500" placeholder="Per Km Fee" value="0">
+                                    </div>
                                 </div>
+                                <hr>
                                 <div class="p-6 border border-gray-200 rounded-xl">
-                                    <h4 class="font-semibold text-xl mb-4">Footer Links</h4>
-                                    <div id="footer-links-container" class="space-y-4"></div>
+                                    <h4 class="font-bold text-xl mb-4 cursor-pointer" onclick="toggleSection(this)">▼ Steps to Order</h4>
+                                    <div id="easy-steps-container" class="setting-content space-y-4"></div>
+                                    <button type="button" id="add-easy-step-btn" class="mt-4 text-blue-600 text-sm font-semibold hover:underline"><i class="fas fa-plus mr-1"></i>Add New Step</button>
+                                </div>
+                                <hr>
+                                <div class="p-6 border border-gray-200 rounded-xl">
+                                    <h4 class="font-bold text-xl mb-4 cursor-pointer" onclick="toggleSection(this)">▼ FAQs</h4>
+                                    <div id="faqs-container" class="setting-content space-y-4"></div>
+                                    <button type="button" id="add-faq-btn-settings" class="mt-4 text-blue-600 text-sm font-semibold hover:underline"><i class="fas fa-plus mr-1"></i>Add New FAQ</button>
+                                </div>
+                                <hr>
+                                <div class="p-6 border border-gray-200 rounded-xl">
+                                    <h4 class="font-bold text-xl mb-4 cursor-pointer" onclick="toggleSection(this)">▼ Policies (T&C, Refund, etc)</h4>
+                                    <div id="policies-container" class="setting-content space-y-4"></div>
+                                    <button type="button" id="add-policy-btn" class="mt-4 text-blue-600 text-sm font-semibold hover:underline"><i class="fas fa-plus mr-1"></i>Add New Policy</button>
+                                </div>
+                                <hr>
+                                <div class="p-6 border border-gray-200 rounded-xl">
+                                    <h4 class="font-bold text-xl mb-4 cursor-pointer" onclick="toggleSection(this)">▼ Footer Links</h4>
+                                    <div id="footer-links-container" class="setting-content space-y-4"></div>
                                     <button type="button" id="add-footer-link-btn" class="mt-4 text-blue-600 text-sm font-semibold hover:underline"><i class="fas fa-plus mr-1"></i>Add Footer Link</button>
                                 </div>
+                                <hr>
                                 <div class="p-6 border border-gray-200 rounded-xl">
-    <h4 class="font-semibold text-xl mb-4">Service Fees</h4>
-    <label class="block text-sm font-medium text-gray-700 mb-1">Pickup Fee ($) (Flat Rate) </label>
-    <input id="setting-pricing-pickupFee" type="number" class="swal2-input border border-gray-300 rounded-lg focus:ring-primary-500 mb-3" placeholder="Pickup Fee" value="0">
-    <label class="block text-sm font-medium text-gray-700 mb-1">Per Km Fee ($)</label>
-    <input id="setting-pricing-kmFee" type="number" class="swal2-input border border-gray-300 rounded-lg focus:ring-primary-500" placeholder="Per Km Fee" value="0">
-</div>
-
-<div class="p-6 border border-gray-200 rounded-xl">
-    <h4 class="font-semibold text-xl mb-4">Easy Steps</h4>
-    <div id="easy-steps-container" class="space-y-4"></div>
-    <button type="button" id="add-easy-step-btn" class="mt-4 text-blue-600 text-sm font-semibold hover:underline"><i class="fas fa-plus mr-1"></i>Add New Step</button>
-</div>
-                                <div class="p-6 border border-gray-200 rounded-xl">
-                                    <h4 class="font-semibold text-xl mb-4">Social Media</h4>
-                                    <div id="social-media-container" class="space-y-4"></div>
+                                    <h4 class="font-bold text-xl mb-4 cursor-pointer" onclick="toggleSection(this)">▼ Social Media</h4>
+                                    <div id="social-media-container" class="setting-content space-y-4"></div>
                                     <button type="button" id="add-social-media-btn" class="mt-4 text-blue-600 text-sm font-semibold hover:underline"><i class="fas fa-plus mr-1"></i>Add Social Media Account</button>
                                 </div>
                                 <div class="border-t pt-6 mt-8 flex justify-end">
@@ -450,13 +482,10 @@
 
     <div id="edit-booking-modal" class="edit-booking-modal-backdrop hidden">
     <div id="edit-booking-popup-content" class="edit-booking-modal-content">
-
         <button id="close-edit-booking-modal" class="edit-booking-close-btn">×</button>
         <h3 class="edit-booking-title">Edit Booking</h3>
-
         <form id="edit-booking-form" class="edit-booking-form">
             <input type="hidden" id="edit-booking-id" value="-OWaxpQUjDlMtRrrM4x6">
-
             <div class="edit-booking-section section-bg-1">
                 <h4 class="edit-booking-section-title">1. Customer Details</h4>
                 <div class="edit-booking-grid-layout grid-cols-desktop-2">
@@ -470,7 +499,6 @@
                     </div>
                 </div>
             </div>
-
             <div class="edit-booking-section section-bg-2">
                 <h4 class="edit-booking-section-title">2. Booking Details</h4>
                 <div class="edit-booking-grid-layout grid-cols-desktop-3">
@@ -497,7 +525,6 @@
                     </div>
                 </div>
             </div>
-
             <div class="edit-booking-section section-bg-1">
                 <h4 class="edit-booking-section-title">3. Financial Summary</h4>
                 <div class="edit-booking-grid-layout grid-cols-desktop-2">
@@ -515,7 +542,6 @@
                     </div>
                 </div>
             </div>
-
             <div class="edit-booking-section section-bg-2">
                 <h4 class="edit-booking-section-title">4. Unit / Seal Information</h4>
                 <div>
@@ -538,7 +564,6 @@
                 </div>
             </div>
         </form>
-
         <div class="edit-booking-footer">
             <button type="submit" form="edit-booking-form" class="btn btn-primary btn-full-width">
                 Save Changes
@@ -546,7 +571,6 @@
         </div>
     </div>
 </div>
-
     <div id="notifications-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden items-center justify-center z-[150] p-4">
         <div class="bg-white w-full max-w-md md:max-w-lg p-6 rounded-xl shadow-2xl relative flex flex-col max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-4 border-b pb-3">
@@ -561,7 +585,7 @@
             </div>
         </div>
     </div>
-
+    
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
@@ -577,6 +601,5 @@
     <script src="/admin/js/faqs.js"></script>
     <script src="/admin/js/settings.js"></script>
     <script src="/admin/js/notification.js"></script> 
-
 </body>
 </html>

@@ -7,6 +7,7 @@ let allFaqs = [];
 let allReviews = [];
 let allTestimonials = [];
 let allCouriers = {};
+let allStorageTypes = {};
 
 let revenueChart = null;
 let html5QrCode = null;
@@ -107,6 +108,10 @@ async function initializeApp() {
     await db.ref('couriers').once('value', snapshot => {
         allCouriers = snapshot.val() || {};
     });
+    
+    await db.ref('settings/storageTypes').once('value', snapshot => {
+        allStorageTypes = snapshot.val() || {};
+    });
 
     attachDataListeners();
 
@@ -188,7 +193,7 @@ function attachDataListeners() {
     }, (error) => {
         console.error("Error fetching vouchers:", error);
     });
-
+    
     db.ref('testimonials').on('value', snapshot => {
         const data = snapshot.val();
         allTestimonials = [];
@@ -220,6 +225,15 @@ function attachDataListeners() {
         if (document.getElementById('page-reviews').classList.contains('active')) window.renderReviews();
     }, (error) => {
         console.error("Error fetching reviews:", error);
+    });
+
+    db.ref('settings/storageTypes').on('value', snapshot => {
+        allStorageTypes = snapshot.val() || {};
+        if (document.getElementById('page-locations').classList.contains('active')) {
+            renderLocationsTable(allLocations);
+        }
+    }, (error) => {
+        console.error("Error fetching storage types:", error);
     });
 }
 
@@ -266,6 +280,10 @@ function setupEventListeners() {
     });
     document.getElementById('close-edit-booking-modal').addEventListener('click', () => {
         document.getElementById('edit-booking-modal').classList.add('hidden');
+    });
+
+    document.getElementById('manage-storage-types-btn').addEventListener('click', () => {
+        openManageStorageTypesModal();
     });
 }
 
