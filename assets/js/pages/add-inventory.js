@@ -1,3 +1,5 @@
+import { uploadInventoryImage } from '../services/firebase-api.js';
+
 const AddInventory = {
     render: async () => {
         return `
@@ -113,6 +115,7 @@ const AddInventory = {
         `;
     },
     afterRender: async () => {
+        const { uploadInventoryImage } = await import('../services/firebase-api.js');
         const neutral200 = '#E5E7EB';
         const neutral300 = '#D1D5DB';
         const neutral400 = '#9CA3AF';
@@ -226,8 +229,8 @@ const AddInventory = {
             const checkInTime = booking.checkInTime ? new Date(booking.checkInTime).toLocaleString() : 'N/A';
             const checkOutTime = booking.checkOutTime ? new Date(booking.checkOutTime).toLocaleString() : 'N/A';
             
-            checkInDateInput.value = checkInTime;
-            checkOutDateInput.value = checkOutTime;
+            checkInDateInput.textContent = checkInTime;
+            checkOutDateInput.textContent = checkOutTime;
             
             if (statusBadge) {
                 statusBadge.textContent = status.replace(/_/g, ' ');
@@ -365,23 +368,27 @@ const AddInventory = {
         submitInventoryBtn.addEventListener('click', async (e) => {
             e.preventDefault();
             
-            const inventoriesRef = firebase.database().ref(`bookings/${bookingId}/inventories`);
             const itemForms = inventoryForm.querySelectorAll('.inventory-item-form-group');
-            let formIsValid = true;
             
-            const uploadPromises = [];
-            
-            itemForms.forEach(itemForm => {
-                const category = itemForm.querySelector('input[name="item-category"]').value;
-                const name = itemForm.querySelector('input[name="item-name"]').value;
-                const description = itemForm.querySelector('textarea[name="item-description"]').value;
-                const photos = itemForm.querySelector('input[name="item-photos"]').files;
+            try {
+                for (const itemForm of itemForms) {
+                    const category = itemForm.querySelector('input[name="item-category"]').value;
+                    const name = itemForm.querySelector('input[name="item-name"]').value;
+                    const description = itemForm.querySelector('textarea[name="item-description"]').value;
+                    const photos = itemForm.querySelector('input[name="item-photos"]').files;
 
-                if (!name || !category || !description) {
-                    formIsValid = false;
-                }
+                    if (!name || !category || !description) {
+                        showPopup('Data Tidak Lengkap', 'Mohon lengkapi semua field untuk setiap item.', 'error');
+                        return;
+                    }
 
-                if (formIsValid) {
+                    let imageUrl = '';
+                    if (photos.length > 0) {
+                        const photoFile = photos[0];
+                        imageUrl = await uploadInventoryImage(photoFile);
+                    }
+
+                    const inventoriesRef = firebase.database().ref(`bookings/${bookingId}/inventories`);
                     const newInventoryRef = inventoriesRef.push();
                     const uniqueCode = newInventoryRef.key;
 
@@ -390,36 +397,13 @@ const AddInventory = {
                         name,
                         description,
                         uniqueCode,
-                        imageUrl: '',
+                        imageUrl,
                         timestamp: firebase.database.ServerValue.TIMESTAMP
                     };
-
-                    if (photos.length > 0) {
-                        const photoFile = photos[0];
-                        const storageRef = firebase.storage().ref(`inventories/${bookingId}/${newInventoryRef.key}-${photoFile.name}`);
-                        const uploadTask = storageRef.put(photoFile).then(snapshot => snapshot.ref.getDownloadURL());
-                        uploadPromises.push(uploadTask.then(url => {
-                            newItemData.imageUrl = url;
-                            return newItemData;
-                        }));
-                    } else {
-                        uploadPromises.push(Promise.resolve(newItemData));
-                    }
+                    
+                    await newInventoryRef.set(newItemData);
                 }
-            });
 
-            if (!formIsValid) {
-                showPopup('Data Tidak Lengkap', 'Mohon lengkapi semua field untuk setiap item.', 'error');
-                return;
-            }
-
-            try {
-                const uploadedItems = await Promise.all(uploadPromises);
-                const updates = {};
-                uploadedItems.forEach(item => {
-                    updates[item.uniqueCode] = item;
-                });
-                inventoriesRef.update(updates);
                 showPopup('Inventaris Berhasil Ditambah!', 'Item inventaris Anda telah berhasil ditambahkan.', 'success');
                 resetForm();
             } catch (error) {

@@ -1,105 +1,112 @@
+/**
+ * Menyiapkan semua event listener untuk elemen navigasi utama.
+ */
 function addNavigationListeners() {
-    // Listener untuk navigasi bawah (mobile)
-    document.getElementById('bottom-nav')?.addEventListener('click', (e) => {
+    const app = document.getElementById('app');
+    app.addEventListener('click', (e) => {
         const navButton = e.target.closest('.nav-btn');
+        const actionLink = e.target.closest('a[href^="#/"]');
+
         if (navButton && navButton.dataset.path) {
             location.hash = navButton.dataset.path;
+        } else if (actionLink) {
+            // Biarkan browser menangani perubahan hash untuk tag anchor
         }
-    });
-
-    // Listener untuk navigasi atas (desktop)
-    document.getElementById('desktop-nav')?.addEventListener('click', (e) => {
-        const navButton = e.target.closest('.nav-btn');
-        if (navButton && navButton.dataset.path) {
-            location.hash = navButton.dataset.path;
-        }
-    });
-
-    // Listener untuk tombol inbox di header
-    document.getElementById('inbox-btn')?.addEventListener('click', () => {
-        location.hash = '#/inbox';
-    });
-
-    // Listener untuk tombol notifikasi di header
-    document.getElementById('notifications-btn')?.addEventListener('click', () => {
-        location.hash = '#/notifications';
     });
 }
 
 /**
- * Merender shell aplikasi (header, footer, dan area konten) berdasarkan tipe perangkat.
- * @param {HTMLElement} appRoot - Elemen root tempat aplikasi dirender.
- * @param {boolean} isDesktop - True jika tampilan adalah desktop, false jika mobile.
+ * Merender kerangka utama aplikasi (header, footer, area konten).
+ * @param {HTMLElement} appRoot - Elemen root untuk merender aplikasi.
+ * @param {boolean} isDesktop - True untuk tampilan desktop, false untuk mobile.
  */
 export function renderAppShell(appRoot, isDesktop) {
+    // Ganti dengan nomor WhatsApp Anda
+    const whatsappLink = "https://wa.me/6281234567890"; 
+
     if (isDesktop) {
         appRoot.innerHTML = `
             <header id="main-header" class="main-header">
-                <img src="/assets/img/storapedia.png" alt="Storapedia Logo" class="logo">
-                <div class="header-actions">
+                <div class="main-header-content">
+                    <img src="/assets/img/storapedia.png" alt="Storapedia Logo" class="logo">
+                    <div id="sidebar-actions">
+                         <a href="#/inbox" class="icon-btn">
+                            <i class="fas fa-inbox"></i>
+                            <span>Inbox</span>
+                        </a>
+                         <a href="#/notifications" class="icon-btn">
+                            <i class="fas fa-bell"></i>
+                            <span>Notifications</span>
+                            <span id="notification-badge" class="badge hidden"></span>
+                        </a>
+                        <a href="${whatsappLink}" target="_blank" class="icon-btn">
+                            <i class="fab fa-whatsapp"></i>
+                            <span>WhatsApp</span>
+                        </a>
+                    </div>
                     <nav id="desktop-nav">
-                        <button class="nav-btn" data-page="home" data-path="#/">
-                            <i class="fas fa-home"></i>
-                            <span>Home</span>
+                        <button class="nav-btn active" data-page="home" data-path="#/">
+                            <i class="fas fa-home"></i><span>Home</span>
                         </button>
                         <button class="nav-btn" data-page="map" data-path="#/map">
-                            <i class="fas fa-map-marked-alt"></i>
-                            <span>Map</span>
+                            <i class="fas fa-map-marked-alt"></i><span>Map</span>
+                        </button>
+                        <button class="nav-btn" data-page="shop" data-path="#/shop">
+                            <i class="fas fa-shopping-cart"></i><span>Shop</span>
                         </button>
                         <button class="nav-btn" data-page="bookings" data-path="#/bookings">
-                            <i class="fas fa-box"></i>
-                            <span>Bookings</span>
+                            <i class="fas fa-box"></i><span>Bookings</span>
                         </button>
                         <button class="nav-btn" data-page="profile" data-path="#/profile">
-                            <i class="fas fa-user-circle"></i>
-                            <span>Profile</span>
+                            <i class="fas fa-user-circle"></i><span>Profile</span>
                         </button>
                     </nav>
-                    <button id="inbox-btn" class="icon-btn" title="Inbox">
-                        <i class="fas fa-inbox"></i>
-                        <span id="inbox-badge" class="badge hidden">0</span>
-                    </button>
-                    <button id="notifications-btn" class="icon-btn" title="Notifications">
-                        <i class="fas fa-bell"></i>
-                        <span id="notification-badge" class="badge hidden">0</span>
-                    </button>
+                    <div class="sidebar-bottom">
+                         <div class="sidebar-legal-links">
+                            <a href="#/terms">Terms & Conditions</a>
+                            <a href="#/privacy">Privacy Policy</a>
+                            <a href="#/help">Help Center</a>
+                        </div>
+                    </div>
                 </div>
             </header>
             <main id="page-container" class="page-container"></main>
             <nav id="bottom-nav" style="display: none;"></nav>
         `;
     } else {
+        // Tata letak mobile dengan header yang sudah diperbaiki
         appRoot.innerHTML = `
             <header id="main-header" class="main-header">
                 <img src="/assets/img/storapedia.png" alt="Storapedia Logo" class="logo">
                 <div class="header-actions">
-                    <button id="inbox-btn" class="icon-btn" title="Inbox">
+                    <a href="#/inbox" class="icon-btn">
                         <i class="fas fa-inbox"></i>
-                        <span id="inbox-badge" class="badge hidden">0</span>
-                    </button>
-                    <button id="notifications-btn" class="icon-btn" title="Notifications">
+                    </a>
+                    <a href="#/notifications" class="icon-btn">
                         <i class="fas fa-bell"></i>
-                        <span id="notification-badge" class="badge hidden">0</span>
-                    </button>
+                        <span id="notification-badge" class="badge hidden"></span>
+                    </a>
+                    <a href="${whatsappLink}" target="_blank" class="icon-btn">
+                        <i class="fab fa-whatsapp"></i>
+                    </a>
                 </div>
             </header>
             <main id="page-container" class="page-container"></main>
             <nav id="bottom-nav">
                 <button class="nav-btn" data-page="home" data-path="#/">
-                    <i class="fas fa-home"></i>
-                    <span>Home</span>
+                    <i class="fas fa-home"></i><span>Home</span>
                 </button>
                 <button class="nav-btn" data-page="map" data-path="#/map">
-                    <i class="fas fa-map-marked-alt"></i>
-                    <span>Map</span>
+                    <i class="fas fa-map-marked-alt"></i><span>Map</span>
+                </button>
+                <button class="nav-btn" data-page="shop" data-path="#/shop">
+                    <i class="fas fa-shopping-cart"></i><span>Shop</span>
                 </button>
                 <button class="nav-btn" data-page="bookings" data-path="#/bookings">
-                    <i class="fas fa-box"></i>
-                    <span>Bookings</span>
+                    <i class="fas fa-box"></i><span>Bookings</span>
                 </button>
                 <button class="nav-btn" data-page="profile" data-path="#/profile">
-                    <i class="fas fa-user-circle"></i>
-                    <span>Profile</span>
+                    <i class="fas fa-user-circle"></i><span>Profile</span>
                 </button>
             </nav>
         `;
@@ -107,15 +114,21 @@ export function renderAppShell(appRoot, isDesktop) {
     addNavigationListeners();
 }
 
+
+/**
+ * Menghasilkan HTML untuk rating bintang berdasarkan skor.
+ * @param {number} rating - Skor rating (mis., 4.5).
+ * @returns {string} String HTML dari ikon bintang.
+ */
 export function getStarRatingHTML(rating) {
     let starsHtml = '';
     for (let i = 1; i <= 5; i++) {
         if (i <= rating) {
-            starsHtml += '<i class="fas fa-star"></i>';
+            starsHtml += '<i class="fas fa-star" style="color: #F59E0B;"></i>';
         } else if (i - 0.5 <= rating) {
-            starsHtml += '<i class="fas fa-star-half-alt"></i>';
+            starsHtml += '<i class="fas fa-star-half-alt" style="color: #F59E0B;"></i>';
         } else {
-            starsHtml += '<i class="far fa-star"></i>';
+            starsHtml += '<i class="far fa-star" style="color: #D1D5DB;"></i>';
         }
     }
     return starsHtml;

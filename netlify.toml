@@ -1,10 +1,21 @@
+functionsDirectory = "netlify/functions"
+functionsDirectoryOrigin = "config-v1"
+redirectsOrigin = "config"
+plugins = []
+headers = []
+
 [build]
-  functions = "netlify/functions"
+publish = "."
+publishOrigin = "default"
+functions = "netlify/functions"
 
 [dev]
-  functions = "netlify/functions"
+functions = "netlify/functions"
+
+  [functions."*"]
 
 [[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
+from = "/api/*"
+to = "/.netlify/functions/:splat"
+status = 200
+force = false

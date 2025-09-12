@@ -5,8 +5,11 @@
   "scripts": {
     "start": "netlify dev"
   },
+  "type": "module",
   "dependencies": {
+    "@netlify/blobs": "^10.0.10",
+    "busboy": "^1.6.0",
     "firebase-admin": "^11.5.0",
-    "node-fetch": "^2.6.7"
+    "node-fetch": "^2.7.0"
   }
 }

@@ -17,77 +17,41 @@ const formatDateTime = (timestamp) => {
 };
 
 async function getBookingStatusNotification(booking) {
-    // --- PERBAIKAN 1: Sembunyikan notifikasi jika sudah check-in ---
-    // Jika booking sudah masuk (checked in), jangan tampilkan status kurir lagi.
-    if (booking.bookingStatus === 'checked_in') {
-        return '';
-    }
-
-    if (booking.serviceType !== 'pickup') {
+    if (['checked_in', 'completed', 'cancelled'].includes(booking.bookingStatus) || booking.serviceType !== 'pickup') {
         return '';
     }
 
     let statusHtml = '';
-
     switch (booking.pickupStatus) {
         case 'requested':
-            if (booking.courierId) {
-                const courierData = await fetchCourierData(booking.courierId);
-                const courierName = courierData ? courierData.name : 'N/A';
-                statusHtml = `<p class="booking-card-info mt-0-5 text-success-500"><i class="fas fa-user-check"></i> <b>Courier Assigned:</b> ${courierName}</p>`;
-            } else {
-                statusHtml = `<p class="booking-card-info mt-0-5 text-warning-500"><i class="fas fa-clock"></i> <b>Pickup Requested:</b> Waiting for courier assignment.</p>`;
-            }
+            statusHtml = `<p class="booking-card-info mt-0-5 text-warning-500"><i class="fas fa-clock"></i> <b>Pickup Requested:</b> Waiting for courier assignment.</p>`;
+            break;
+        case 'processing_by_courier':
+            const courierName = booking.courierName || 'Our courier';
+            statusHtml = `<p class="booking-card-info mt-0-5 text-info-500"><i class="fas fa-user-check"></i> <b>Courier Assigned:</b> ${courierName} is on the way.</p>`;
             break;
         case 'picked_up':
-            statusHtml = `<p class="booking-card-info mt-0-5 text-info-500"><i class="fas fa-truck-loading"></i> <b>Item Picked Up:</b> On the way to our facility.</p>`;
-            break;
-        case 'completed':
-             statusHtml = `<p class="booking-card-info mt-0-5 text-success-500"><i class="fas fa-check-circle"></i> <b>Pickup Complete:</b> Item has been checked in.</p>`;
-             break;
-        default:
+            statusHtml = `<p class="booking-card-info mt-0-5 text-success-500"><i class="fas fa-truck-loading"></i> <b>Item Picked Up:</b> Your item is now en route to our secure facility.</p>`;
             break;
     }
-    
-    if (booking.needsDelivery && booking.deliveryStatus === 'requested') {
-        statusHtml += `<p class="booking-card-info mt-0-5 text-warning-500"><i class="fas fa-truck"></i> Delivery Requested</p>`;
-    }
-
     return statusHtml;
 }
-
 
 async function getBookingCardActionButtons(booking) {
     let buttonsHtml = `<button class="btn btn-secondary" data-booking-id="${booking.id}" data-action="details"><i class="fas fa-info-circle"></i> Details</button>`;
     const now = Date.now();
     const endDate = booking.endDate;
-    const isPickupService = booking.serviceType === 'pickup';
+    const isPaid = ['paid', 'paid_on_site'].includes(booking.paymentStatus);
 
-    if (booking.bookingStatus === 'checked_in') {
-        buttonsHtml += `<button class="btn btn-info add-inventory-btn" data-booking-id="${booking.id}" data-action="add_inventory"><i class="fas fa-box"></i> Add Inventory</button>`;
-        
-        // --- PERBAIKAN 2: Kondisi pembayaran untuk tombol Extend ---
-        // Mencakup 'paid' (online) dan 'paid_on_site' (COD)
-        const isPaid = ['paid', 'paid_on_site'].includes(booking.paymentStatus);
-
-        if (isPaid && now <= endDate) {
-            buttonsHtml += `<button class="btn btn-warning extend-btn" data-booking-id="${booking.id}" data-action="extend"><i class="fas fa-calendar-plus"></i> Extend</button>`;
-        }
-
-    } else if (booking.bookingStatus === 'active' || booking.bookingStatus === 'extended') {
-        if (booking.serviceType === 'self-dropoff' && (!booking.checkInTime || booking.checkInTime === 0)) {
+    if (booking.bookingStatus === 'checked_in' && isPaid && now <= endDate) {
+        buttonsHtml += `<button class="btn btn-warning extend-btn" data-booking-id="${booking.id}" data-action="extend"><i class="fas fa-calendar-plus"></i> Extend</button>`;
+    } else if (booking.bookingStatus === 'active') {
+        if (booking.serviceType === 'self-dropoff' && !booking.checkInTime) {
             if (booking.paymentStatus === 'paid') {
                 buttonsHtml += `<button class="btn btn-primary check-in-btn" data-booking-id="${booking.id}" data-action="checkin"><i class="fas fa-sign-in-alt"></i> Check In</button>`;
-            } else if (booking.paymentStatus === 'unpaid_on_site' && booking.paymentMethod !== 'cod_on_site') {
+            } else if (booking.paymentStatus === 'unpaid_on_site') {
                 buttonsHtml += `<button class="btn btn-warning pay-to-check-in-btn" data-booking-id="${booking.id}" data-action="pay_to_checkin"><i class="fas fa-dollar-sign"></i> Pay & Check In</button>`;
             }
-        } else if (isPickupService && !booking.pickupStatus) {
-             buttonsHtml += `<button class="btn btn-info request-pickup-btn" data-booking-id="${booking.id}" data-action="request_pickup"><i class="fas fa-truck-loading"></i> Request Pickup</button>`;
-        } else if (isPickupService && booking.pickupStatus === 'requested' && booking.courierId) {
-             const courierData = await fetchCourierData(booking.courierId);
-             if (courierData) {
-                buttonsHtml += `<button class="btn btn-success pickup-assigned-btn" data-booking-id="${booking.id}" data-action="view_courier_details"><i class="fas fa-user-check"></i> View Courier</button>`;
-             }
         }
     }
 
@@ -253,6 +217,37 @@ async function showBookingDetailsModal(booking) {
       return '';
     };
 
+    let warehousePhotosHtml = '';
+    if (booking.warehousePhotoUrls && booking.warehousePhotoUrls.length > 0) {
+        const slides = booking.warehousePhotoUrls.map(url => `<div class="swiper-slide"><img src="${url}" class="w-full h-auto object-cover rounded-lg"></div>`).join('');
+        warehousePhotosHtml = `
+            <div class="booking-detail-card">
+                <h4 class="booking-details-title">Warehouse Photos</h4>
+                <div class="swiper-container warehouse-slider relative">
+                    <div class="swiper-wrapper">${slides}</div>
+                    <div class="swiper-button-next text-white"></div>
+                    <div class="swiper-button-prev text-white"></div>
+                </div>
+            </div>
+        `;
+    }
+    
+    let suppliesHtml = '';
+    if (booking.supplies && booking.supplies.length > 0) {
+        const suppliesList = booking.supplies.map(item => `
+            <div class="flex justify-between items-center text-sm py-1">
+                <span>- ${item.name} (x${item.quantity})</span>
+                <strong>$${(item.price * item.quantity).toFixed(2)}</strong>
+            </div>
+        `).join('');
+        suppliesHtml = `
+            <div class="booking-detail-card">
+                <h4 class="booking-details-title">Supplies & Extras</h4>
+                ${suppliesList}
+            </div>
+        `;
+    }
+
     let orderInfoHtml = `
         <div class="booking-detail-card">
             <h4 class="booking-details-title">Order Information</h4>
@@ -366,8 +361,10 @@ async function showBookingDetailsModal(booking) {
             ${pickupDetailsHtml}
             ${deliveryDetailsHtml}
             ${paymentInfoHtml}
+            ${suppliesHtml}
             ${otherInfoHtml}
             ${securityInfoHtml}
+            ${warehousePhotosHtml}
         </div>
         <div class="modal-footer">
             <button class="btn btn-secondary" data-action="download-invoice">Download Invoice</button>
@@ -389,6 +386,16 @@ async function showBookingDetailsModal(booking) {
         modal.style.display = 'none';
         modal.remove();
     });
+
+    if (booking.warehousePhotoUrls && booking.warehousePhotoUrls.length > 0) {
+        new Swiper('.warehouse-slider', {
+            navigation: {
+                nextEl: '.swiper-button-next',
+                prevEl: '.swiper-button-prev',
+            },
+            loop: true,
+        });
+    }
 
     const qrcodeContainer = modal.querySelector("#qrcode-container");
     if (qrcodeContainer && typeof QRCode !== 'undefined') {
@@ -435,9 +442,9 @@ async function showExtendConfirmationModal(originalBooking) {
     
     const calculatePriceAndDuration = (startDate, endDate) => {
         const diffTime = endDate.getTime() - startDate.getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const diffDays = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
         
-        let durationText = `${diffDays} Days`;
+        let durationText = `${diffDays} Day(s)`;
         let rateKey = 'Daily';
         if (diffDays >= 30) {
             durationText = 'Monthly';
@@ -445,19 +452,15 @@ async function showExtendConfirmationModal(originalBooking) {
         } else if (diffDays >= 7) {
             durationText = 'Weekly';
             rateKey = 'Weekly';
-        } else if (diffDays >= 1) {
-            durationText = 'Daily';
-            rateKey = 'Daily';
         }
-
-        const rate = rates.find(r => r.duration === rateKey)?.price || 0;
-        const totalExtensionPrice = diffDays * rate;
-        const newTotalPrice = originalBooking.totalPrice + totalExtensionPrice;
         
-        return { durationText, newTotalPrice };
+        const dailyRate = rates.find(r => r.duration.toLowerCase() === 'daily')?.price || 0;
+        const totalExtensionPrice = diffDays * dailyRate;
+        
+        return { durationText, totalExtensionPrice };
     };
 
-    let { durationText, newTotalPrice } = calculatePriceAndDuration(minEndDate, minEndDate);
+    let { durationText, totalExtensionPrice } = calculatePriceAndDuration(originalEndDate, minEndDate);
 
     const extendModalContent = `
         <div class="booking-details-modal-header">
@@ -466,9 +469,6 @@ async function showExtendConfirmationModal(originalBooking) {
         </div>
         <div class="booking-details-modal-body booking-extend-body">
             <h4>Original Booking</h4>
-            <p><strong>ID:</strong> ${originalBooking.id}</p>
-            <p><strong>Location:</strong> ${originalBooking.locationName}</p>
-            <p><strong>Duration:</strong> ${originalBooking.duration}</p>
             <p><strong>Current End Date:</strong> ${formatDate(originalBooking.endDate)}</p>
             
             <h4 class="mt-1-5">Extension Details</h4>
@@ -476,8 +476,8 @@ async function showExtendConfirmationModal(originalBooking) {
                 <label for="new-end-date-input">New End Date:</label>
                 <input type="date" id="new-end-date-input" class="form-control" value="${minEndDateString}" min="${minEndDateString}">
             </div>
-            <p><strong>New Duration:</strong> <span id="new-duration-span">${durationText}</span></p>
-            <p><strong>New Total Price:</strong> <span id="new-total-price-span" class="booking-total-price">$${newTotalPrice.toFixed(2)}</span></p>
+            <p><strong>Extension Duration:</strong> <span id="new-duration-span">${durationText}</span></p>
+            <p><strong>Extension Price:</strong> <span id="extension-price-span" class="booking-total-price">$${totalExtensionPrice.toFixed(2)}</span></p>
 
             <h4 class="mt-1-5">Payment Method</h4>
             <div class="payment-options">
@@ -488,7 +488,7 @@ async function showExtendConfirmationModal(originalBooking) {
             </div>
 
             <div class="booking-detail-actions">
-                <button class="btn btn-primary" id="confirm-extend-btn"><i class="fas fa-check-circle"></i> Confirm Extension</button>
+                <button class="btn btn-primary" id="confirm-extend-btn"><i class="fas fa-check-circle"></i> Confirm & Pay</button>
             </div>
         </div>
     `;
@@ -505,13 +505,13 @@ async function showExtendConfirmationModal(originalBooking) {
 
     const newEndDateInput = extendModal.querySelector('#new-end-date-input');
     const newDurationSpan = extendModal.querySelector('#new-duration-span');
-    const newTotalPriceSpan = extendModal.querySelector('#new-total-price-span');
+    const extensionPriceSpan = extendModal.querySelector('#extension-price-span');
 
     newEndDateInput.addEventListener('change', (e) => {
         const newSelectedDate = new Date(e.target.value);
-        const { durationText, newTotalPrice } = calculatePriceAndDuration(minEndDate, newSelectedDate);
+        const { durationText, totalExtensionPrice } = calculatePriceAndDuration(originalEndDate, newSelectedDate);
         newDurationSpan.textContent = durationText;
-        newTotalPriceSpan.textContent = `$${newTotalPrice.toFixed(2)}`;
+        extensionPriceSpan.textContent = `$${totalExtensionPrice.toFixed(2)}`;
     });
 
     extendModal.querySelector('.close-modal-btn').addEventListener('click', () => {
@@ -523,26 +523,34 @@ async function showExtendConfirmationModal(originalBooking) {
         showLoader(true, 'Processing extension...');
         try {
             const newEndDateTimestamp = new Date(newEndDateInput.value).getTime();
-            const selectedPaymentMethod = extendModal.querySelector('input[name="paymentMethod"]:checked').value;
-            const finalPrice = parseFloat(newTotalPriceSpan.textContent.replace('$', ''));
+            const extensionPrice = parseFloat(extensionPriceSpan.textContent.replace('$', ''));
+            const newTotalPrice = originalBooking.totalPrice + extensionPrice;
 
             await updateBookingStatus(originalBooking.id, 'extended', {
                 endDate: newEndDateTimestamp,
-                totalPrice: finalPrice,
-                paymentMethod: selectedPaymentMethod,
-                paymentStatus: 'unpaid',
+                totalPrice: newTotalPrice,
+                paymentMethod: 'online',
+                paymentStatus: 'pending',
             });
 
             const userData = await fetchUserData(user.uid);
+            
             const paymentData = {
-                totalPrice: finalPrice,
-                id: originalBooking.id,
-                userEmail: userData?.email || 'customer@example.com',
-                userName: userData?.name || 'Customer'
+                orderId: `EXT-${originalBooking.id.slice(-6)}-${Date.now()}`,
+                totalPrice: extensionPrice,
+                name: userData?.name || 'Customer',
+                email: userData?.email || 'customer@example.com',
+                phone: userData?.phone || 'N/A',
+                selectedSpaces: [{
+                    name: `Extend ${originalBooking.storageType}`,
+                    quantity: 1,
+                    price: extensionPrice
+                }]
             };
-            await createIpaymuInvoice(paymentData);
 
-            showToast('Booking successfully extended. Redirecting to online payment.', 'success');
+            await createIpaymuInvoice(paymentData);
+            
+            showToast('Redirecting to payment gateway...', 'success');
             
             extendModal.style.display = 'none';
             extendModal.remove();
@@ -734,11 +742,11 @@ async function renderBookingsList(bookings) {
         const actionButtons = await getBookingCardActionButtons(booking);
         
         let pickupStatusBadgeHtml = '';
-        if (booking.serviceType === 'pickup' && booking.pickupStatus && booking.bookingStatus !== 'checked_in') {
-            let statusText = (booking.pickupStatus).replace(/_/g, ' ');
+        if (booking.serviceType === 'pickup' && !['checked_in', 'completed', 'cancelled'].includes(booking.bookingStatus)) {
+            let statusText = (booking.pickupStatus || 'requested').replace(/_/g, ' ');
             statusText = statusText.charAt(0).toUpperCase() + statusText.slice(1);
             
-            const statusClass = `status-${booking.pickupStatus}`;
+            const statusClass = `status-${booking.pickupStatus || 'requested'}`;
 
             pickupStatusBadgeHtml = `
                 <div class="pickup-status-display ${statusClass}">
@@ -777,131 +785,29 @@ async function renderBookingsList(bookings) {
 
     document.querySelectorAll('.booking-actions button[data-action]').forEach(button => {
         button.addEventListener('click', async (event) => {
-            const actionButtonContainer = event.target.closest('.action-buttons-group');
-            if (!actionButtonContainer) return;
-            
-            const anyButtonWithId = actionButtonContainer.querySelector('button[data-booking-id]');
-            if (!anyButtonWithId) return;
-
-            const bookingId = anyButtonWithId.dataset.bookingId;
-            const action = event.target.dataset.action;
+            const bookingId = event.target.closest('button').dataset.bookingId;
+            const action = event.target.closest('button').dataset.action;
             const selectedBooking = bookings.find(b => b.id === bookingId);
 
             if (!selectedBooking) return;
 
-            if (action === 'request_pickup' || action === 'request_delivery') {
-                    showLoader(false);
-                    const user = getCurrentUser();
-                    if (!user) {
-                        showToast("Please log in to request this service.", 'error');
-                        location.hash = '#/auth';
-                        return;
-                    }
-
-                    const bookingCreatedAt = selectedBooking.createdAt;
-                    const minPickupTime = new Date(bookingCreatedAt + 3 * 60 * 60 * 1000);
-                    const now = new Date();
-
-                    if (now > minPickupTime) {
-                        minPickupTime.setTime(now.getTime() + 5 * 60 * 1000);
-                    }
-
-                    const minTime = minPickupTime.toTimeString().slice(0, 5);
-                    const serviceType = action.split('_')[1];
-
-                    Swal.fire({
-                        title: `Request ${serviceType === 'pickup' ? 'Pickup' : 'Delivery'} Time`,
-                        html: `<p>Select a time for ${serviceType === 'pickup' ? 'pickup' : 'delivery'}. Minimum time is 3 hours after booking.</p>
-                               <input type="time" id="pickup-time" class="swal2-input" min="${minTime}">`,
-                        confirmButtonText: `Confirm ${serviceType === 'pickup' ? 'Pickup' : 'Delivery'} Time`,
-                        showCancelButton: true,
-                        preConfirm: () => {
-                            const pickupTime = document.getElementById('pickup-time').value;
-                            if (!pickupTime) {
-                                Swal.showValidationMessage('Please select a valid time.');
-                                return false;
-                            }
-                            const [hours, minutes] = pickupTime.split(':');
-                            const selectedDateTime = new Date();
-                            selectedDateTime.setHours(hours, minutes, 0, 0);
-
-                            if (selectedDateTime < minPickupTime) {
-                                Swal.showValidationMessage(`Time cannot be in the past. Minimum time is ${minTime}.`);
-                                return false;
-                            }
-                            return pickupTime;
-                        }
-                    }).then(async (result) => {
-                        if (result.isConfirmed) {
-                            const pickupTime = result.value;
-                            showLoader(true, `Processing your ${serviceType} request...`);
-
-                            try {
-                                const updates = { 
-                                    pickupTime: pickupTime, 
-                                    [`${serviceType}Status`]: 'requested' 
-                                };
-                                await updateBookingStatus(selectedBooking.id, selectedBooking.bookingStatus, updates);
-                                await requestPickup(selectedBooking.locationId, {
-                                    bookingId: selectedBooking.id,
-                                    userId: user.uid,
-                                    pickupAddress: selectedBooking.pickupAddress,
-                                    pickupTime: pickupTime,
-                                    status: 'requested',
-                                    locationName: selectedBooking.locationName,
-                                    timestamp: Date.now()
-                                });
-                                showToast(`${serviceType} request sent successfully!`, 'success');
-
-                            } catch (error) {
-                                console.error(`Error processing ${serviceType} request:`, error);
-                                showToast(`Failed to send ${serviceType} request. Please try again.`, 'error');
-                            } finally {
-                                showLoader(false);
-                            }
-                        }
-                    });
-            } else {
-                showLoader(true, `Performing ${action} for booking ID: ${bookingId}...`);
-                try {
-                    if (action === 'checkin') {
-                        await updateBookingStatus(bookingId, 'checked_in', { checkInTime: Date.now() });
-                        showToast('Check-in successful!', 'success');
-                    } else if (action === 'pay_to_checkin') {
-                        showLoader(false);
-                        showPayToCheckInModal(selectedBooking);
-                        return;
-                    } else if (action === 'checkout') {
-                        await updateBookingStatus(bookingId, 'completed', { checkOutTime: Date.now() });
-                        showToast('Check-out successful!', 'success');
-                    } else if (action === 'add_inventory') {
-                        showLoader(false);
-                        localStorage.setItem('currentBookingId', bookingId);
-                        location.hash = '#/add-inventory';
-                        return;
-                    } else if (action === 'extend') {
-                        showLoader(false);
-                        showExtendConfirmationModal(selectedBooking);
-                        return;
-                    } else if (action === 'details') {
-                        showLoader(false);
-                        showBookingDetailsModal(selectedBooking);
-                        return;
-                    } else if (action === 'review') {
-                        showLoader(false);
-                        showReviewModal(selectedBooking);
-                        return;
-                    } else if (action === 'view_courier_details') {
-                        showLoader(false);
-                        showCourierDetailsModal(selectedBooking);
-                        return;
-                    }
-                } catch (error) {
-                    console.error(`Error performing ${action} for booking ${bookingId}:`, error);
-                    showToast(`Failed to perform action "${action}". Please try again.`, 'error');
-                } finally {
-                    showLoader(false);
-                }
+            switch (action) {
+                case 'details':
+                    showBookingDetailsModal(selectedBooking);
+                    break;
+                case 'extend':
+                    renderExtendBookingModal(selectedBooking);
+                    break;
+                case 'checkin':
+                    await updateBookingStatus(bookingId, 'checked_in', { checkInTime: Date.now() });
+                    showToast('Check-in successful!', 'success');
+                    break;
+                case 'pay_to_checkin':
+                    renderPayToCheckInModal(selectedBooking);
+                    break;
+                case 'review':
+                    showReviewModal(selectedBooking); // Panggil fungsi yang sudah diperbaiki
+                    break;
             }
         });
     });

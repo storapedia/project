@@ -1,95 +1,4 @@
-window.handleReviewReply = async function(e, locationId, reviewId, userId) {
-    const user = allUsers[userId];
-    if (!user) return Swal.fire('Error', 'User not found for this review.', 'error');
-    
-    const { value: replyText } = await Swal.fire({
-        title: `Reply to Review from ${user.name}`,
-        input: 'textarea',
-        inputPlaceholder: 'Type your reply here...',
-        showCancelButton: true,
-        confirmButtonText: 'Send Reply',
-        customClass: {
-            popup: 'swal2-popup-custom-width'
-        }
-    });
-
-    if (replyText) {
-        try {
-            const adminId = auth.currentUser ? auth.currentUser.uid : 'admin_default_id'; 
-            const adminName = auth.currentUser ? (allUsers[adminId]?.name || 'Admin') : 'Admin'; 
-
-            const replyRef = db.ref(`reviews/${locationId}/${reviewId}/replies`).push(); 
-            await replyRef.set({
-                userId: adminId,
-                name: adminName,
-                text: replyText,
-                timestamp: firebase.database.ServerValue.TIMESTAMP
-            });
-            Swal.fire('Success', 'Reply sent successfully!', 'success');
-        } catch (error) {
-            Swal.fire('Error', 'Failed to send reply.', 'error');
-        }
-    }
-};
-
-window.viewBookingDetails = async function(bookingId) {
-    const booking = allBookings.find(b => b.id === bookingId);
-    if (!booking) return Swal.fire('Error', 'Booking not found.', 'error');
-    const user = allUsers[booking.userId];
-    const sealPhotoHtml = booking.sealPhotoUrl ? `<img src="${booking.sealPhotoUrl}" class="w-full h-auto max-w-sm mx-auto rounded-lg shadow-md border my-4">` : '<p class="text-center text-gray-500 bg-gray-100 p-4 rounded-lg my-4">No seal photo uploaded.</p>';
-    
-    Swal.fire({
-        title: 'Booking Details',
-        html: `
-            <div class="text-left space-y-4">
-                <div>
-                    <h3 class="font-bold text-lg">${user?.name || 'Unknown User'}</h3>
-                    <p class="text-sm text-gray-500">${user?.email || 'N/A'} | ${user?.phone || 'N/A'}</p>
-                </div>
-                <div class="border-t pt-4">
-                    <p><strong class="w-32 inline-block">Booking ID:</strong> ${booking.id}</p>
-                    <p><strong class="w-32 inline-block">Location:</strong> ${booking.locationName || 'N/A'}</p>
-                    <p><strong class="w-32 inline-block">Unit Type:</strong> ${booking.storageType || 'N/A'}</p>
-                    <p><strong class="w-32 inline-block">Period:</strong> ${booking.startDate ? new Date(booking.startDate).toLocaleDateString('en-US') : 'N/A'} - ${booking.endDate ? new Date(booking.endDate).toLocaleDateString('en-US') : 'N/A'}</p>
-                    <p><strong class="w-32 inline-block">Total Price:</strong> ${currencyFormatter.format(booking.totalPrice || 0)}</p>
-                    <p><strong class="w-32 inline-block">Payment Method:</strong> ${booking.paymentMethod?.replace(/_/g, ' ') || 'N/A'}</p>
-                    <p><strong class="w-32 inline-block">Payment Status:</strong> ${booking.paymentStatus?.replace(/_/g, ' ') || 'N/A'}</p>
-                    <p><strong class="w-32 inline-block">Service Type:</strong> ${booking.serviceType?.replace(/_/g, ' ') || 'N/A'}</p>
-                </div>
-                <div class="border-t pt-4">
-                    <h4 class="font-semibold mb-2">Seal Details:</h4>
-                    <p><strong class="w-32 inline-block">Seal Number:</strong> ${booking.sealNumber || 'Not set'}</p>
-                    <div class="mt-2">
-                        <h5 class="font-medium text-sm">Seal Photo:</h5>
-                        ${sealPhotoHtml}
-                    </div>
-                </div>
-            </div>
-        `,
-        width: '600px',
-        showCloseButton: true,
-        showConfirmButton: false
-    });
-};
-
-window.openDirectMessageModal = function(userId) {
-    showPage('inbox');
-    openChatWindow(userId);
-};
-
-function fetchAndRenderVouchers() {
-    allVouchers = [];
-    db.ref('vouchers').once('value', snapshot => {
-        console.log("Snapshot Firebase:", snapshot.val());
-        console.log("Jumlah children di Snapshot:", snapshot.numChildren());
-        snapshot.forEach(child => {
-            console.log("Memproses child:", child.key);
-            allVouchers.push({id: child.key, ...child.val()});
-        });
-        console.log("Data allVouchers setelah diproses:", allVouchers);
-        renderVouchersTable(allVouchers);
-    });
-}
+// admin/js/vouchers.js
 
 function renderVouchersTable(vouchers) {
     const tbody = document.getElementById('vouchers-table-body');
@@ -109,17 +18,22 @@ function renderVouchersTable(vouchers) {
         let appliesTo = 'All Locations';
         if (v.appliesTo === 'specific' && v.locations) { appliesTo = `${Object.keys(v.locations).length} specific locations`; }
 
+        // Gunakan fungsi get-photo untuk menampilkan gambar
+        const imageUrl = v.imageUrl 
+            ? `/.netlify/functions/get-photo?key=${encodeURIComponent(v.imageUrl.split('key=')[1] || v.imageUrl)}` 
+            : 'https://placehold.co/100x60/e2e8f0/64748b?text=Voucher';
+
         const row = document.createElement('tr');
         row.className = 'bg-white border-b hover:bg-gray-50';
         row.innerHTML = `
-            <td class="px-6 py-4"><img src="${v.imageUrl || 'https://placehold.co/100x60/e2e8f0/64748b?text=Voucher'}" class="w-24 h-auto rounded-md"></td>
+            <td class="px-6 py-4"><img src="${imageUrl}" class="w-24 h-auto rounded-md object-cover"></td>
             <td class="px-6 py-4 font-semibold">${v.code || 'N/A'}</td>
             <td class="px-6 py-4">${v.discount_percent || '0'}%</td>
             <td class="px-6 py-4 text-xs">${appliesTo}</td>
             <td class="px-6 py-4"><span class="px-2 py-1 font-semibold leading-tight rounded-full text-xs ${v.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${v.active ? 'Active' : 'Inactive'}</span></td>
             <td class="px-6 py-4 space-x-2">
-                <button class="text-blue-600 hover:text-blue-900" onclick="openVoucherModal('${v.code}')"><i class="fas fa-edit"></i></button>
-                <button class="text-red-600 hover:text-red-900" onclick="deleteItem('vouchers', '${v.code}', 'voucher')"><i class="fas fa-trash"></i></button>
+                <button class="text-blue-600 hover:text-blue-900" onclick="openVoucherModal('${v.id}')"><i class="fas fa-edit"></i></button>
+                <button class="text-red-600 hover:text-red-900" onclick="deleteItem('vouchers', '${v.id}', 'voucher')"><i class="fas fa-trash"></i></button>
             </td>
         `;
         tbody.appendChild(row);
@@ -144,8 +58,8 @@ function renderVouchersTable(vouchers) {
                 <span class="card-value"><span class="px-2 py-1 font-semibold leading-tight rounded-full text-xs ${v.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${v.active ? 'Active' : 'Inactive'}</span></span>
             </div>
             <div class="card-actions">
-                <button class="text-blue-600 hover:text-blue-900" onclick="openVoucherModal('${v.code}')"><i class="fas fa-edit"></i> Edit</button>
-                <button class="text-red-600 hover:text-red-900" onclick="deleteItem('vouchers', '${v.code}', 'voucher')"><i class="fas fa-trash"></i> Delete</button>
+                <button class="text-blue-600 hover:text-blue-900" onclick="openVoucherModal('${v.id}')"><i class="fas fa-edit"></i> Edit</button>
+                <button class="text-red-600 hover:text-red-900" onclick="deleteItem('vouchers', '${v.id}', 'voucher')"><i class="fas fa-trash"></i> Delete</button>
             </div>
         `;
         cardView.appendChild(card);
@@ -153,27 +67,44 @@ function renderVouchersTable(vouchers) {
 }
 
 async function openVoucherModal(voucherId = null) {
+    const { uploadImage } = await import('./uploader.js');
     let v = {};
-    if (voucherId) {
+    let selectedVoucherImageFile = null;
+    const isEdit = !!voucherId;
+
+    if (isEdit) {
         const snapshot = await db.ref(`vouchers/${voucherId}`).once('value');
         v = { id: voucherId, ...snapshot.val() };
     }
-    const isEdit = !!voucherId;
+
     const locationOptions = allLocations.map(l => `<label class="flex items-center gap-2"><input type="checkbox" class="specific-location-cb" value="${l.id}" ${v.locations?.[l.id] ? 'checked' : ''}> ${l.name}</label>`).join('');
+    
+    // URL gambar default jika tidak ada
+    const existingImageUrl = v.imageUrl 
+        ? `/.netlify/functions/get-photo?key=${encodeURIComponent(v.imageUrl.split('key=')[1] || v.imageUrl)}` 
+        : '';
 
     Swal.fire({
         title: isEdit ? 'Edit Voucher' : 'Add New Voucher',
         html: `
             <form id="voucher-form" class="text-left space-y-4">
+                <div id="voucher-image-preview" class="relative w-full h-32 border rounded-lg flex items-center justify-center cursor-pointer bg-gray-50">
+                    <img id="voucher-image-img" src="${existingImageUrl}" class="absolute w-full h-full object-cover rounded-lg ${existingImageUrl ? '' : 'hidden'}"/>
+                    <div id="voucher-image-placeholder" class="text-center text-gray-400 ${existingImageUrl ? 'hidden' : ''}">
+                        <i class="fas fa-image text-3xl"></i>
+                        <p class="mt-1 text-xs">Click to upload</p>
+                    </div>
+                </div>
+                <input id="voucher-image-upload" type="file" class="hidden" accept="image/*">
+
                 <input id="swal-voucher-code" class="swal2-input" placeholder="Voucher Code (e.g., DISCOUNT10)" value="${v.code || ''}">
                 <input id="swal-voucher-discount" type="number" class="swal2-input" placeholder="Discount (%)" value="${v.discount_percent || ''}">
                 <label class="block text-sm font-medium text-gray-700">Voucher Status</label>
                 <select id="swal-voucher-status" class="swal2-input">
-                    <option value="true" ${v.active ? 'selected' : ''}>Active</option>
-                    <option value="false" ${!v.active ? 'selected' : ''}>Inactive</option>
+                    <option value="true" ${v.active !== false ? 'selected' : ''}>Active</option>
+                    <option value="false" ${v.active === false ? 'selected' : ''}>Inactive</option>
                 </select>
-                <label class="block text-sm font-medium text-gray-700">Voucher Image URL</label>
-                <input id="swal-voucher-image" class="swal2-input" placeholder="Image URL" value="${v.imageUrl || ''}">
+                
                 <div class="p-3 border rounded-lg">
                     <h4 class="font-semibold mb-2">Applies To</h4>
                     <label class="flex items-center gap-2"><input type="radio" name="appliesTo" value="all" ${v.appliesTo !== 'specific' ? 'checked' : ''}> All Locations</label>
@@ -188,21 +119,58 @@ async function openVoucherModal(voucherId = null) {
             const specificContainer = document.getElementById('specific-locations-container');
             specificCheckbox.addEventListener('change', () => specificContainer.classList.remove('hidden'));
             allCheckbox.addEventListener('change', () => specificContainer.classList.add('hidden'));
+
+            const imageInput = document.getElementById('voucher-image-upload');
+            document.getElementById('voucher-image-preview').addEventListener('click', () => imageInput.click());
+            imageInput.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files[0]) {
+                    selectedVoucherImageFile = e.target.files[0];
+                    const reader = new FileReader();
+                    reader.onload = (re) => {
+                        document.getElementById('voucher-image-img').src = re.target.result;
+                        document.getElementById('voucher-image-img').classList.remove('hidden');
+                        document.getElementById('voucher-image-placeholder').classList.add('hidden');
+                    };
+                    reader.readAsDataURL(selectedVoucherImageFile);
+                }
+            });
         },
         showCancelButton: true,
         confirmButtonText: 'Save',
-        preConfirm: () => {
-            const code = document.getElementById('swal-voucher-code').value;
+        preConfirm: async () => {
+            let imageUrl = v.imageUrl || ''; // Mulai dengan URL yang ada
+            if (selectedVoucherImageFile) {
+                Swal.showLoading();
+                try {
+                    imageUrl = await uploadImage(selectedVoucherImageFile);
+                } catch (error) {
+                    Swal.showValidationMessage(`Upload Failed: ${error.message}`);
+                    return false;
+                }
+            }
+
+            const code = document.getElementById('swal-voucher-code').value.toUpperCase();
             const discount_percent = parseInt(document.getElementById('swal-voucher-discount').value);
             const active = document.getElementById('swal-voucher-status').value === 'true';
-            const imageUrl = document.getElementById('swal-voucher-image').value;
             const appliesTo = document.querySelector('input[name="appliesTo"]:checked').value;
             let locations = null;
             if (appliesTo === 'specific') {
                 locations = {};
                 document.querySelectorAll('.specific-location-cb:checked').forEach(cb => locations[cb.value] = true);
             }
-            return { code, discount_percent, active, imageUrl, appliesTo, locations };
+            
+            // Gabungkan data lama dan baru
+            const updatedData = {
+                ...v, // Ambil semua data lama
+                code,
+                discount_percent,
+                active,
+                imageUrl,
+                appliesTo,
+                locations
+            };
+            
+            return updatedData;
         }
     }).then(async (result) => {
         if (result.isConfirmed) {
@@ -210,10 +178,20 @@ async function openVoucherModal(voucherId = null) {
             if (!data.code || isNaN(data.discount_percent)) {
                 return Swal.fire('Error', 'Code and Discount (%) are required.', 'error');
             }
+
+            // Jika kode voucher diubah, hapus yang lama dan buat yang baru
             if (isEdit && voucherId !== data.code) {
                 await db.ref(`vouchers/${voucherId}`).remove();
             }
-            db.ref(`vouchers/${data.code}`).set(data)
+            
+            // Gunakan ID asli jika tidak diedit, atau kode baru jika diedit/baru
+            const finalId = data.id && !isEdit ? data.id : data.code;
+            
+            // Hapus ID dari data sebelum menyimpan untuk menghindari duplikasi
+            const dataToSave = { ...data };
+            delete dataToSave.id;
+
+            db.ref(`vouchers/${finalId}`).set(dataToSave)
                 .then(() => Swal.fire('Success', 'Voucher saved.', 'success'))
                 .catch(err => Swal.fire('Error', err.message, 'error'));
         }

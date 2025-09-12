@@ -1,3 +1,5 @@
+import { uploadInventoryImage } from '../services/firebase-api.js';
+
 const Profile = {
     styles: {
         primary500: '#00BEFC',
@@ -390,26 +392,17 @@ const Profile = {
             const file = e.target.files[0];
             if (!file) return;
 
-            const storageRef = firebase.storage().ref(`profile_pictures/${currentUserId}/${Date.now()}-${file.name}`);
-            const uploadTask = storageRef.put(file);
-
-            uploadTask.on('state_changed',
-                (snapshot) => {
-                    showPopup('Uploading...', 'Please wait while your photo is being uploaded.', 'info');
-                },
-                (error) => {
-                    console.error("Upload failed:", error);
-                    showPopup('Upload Failed', 'An error occurred during photo upload.', 'error');
-                },
-                () => {
-                    uploadTask.snapshot.ref.getDownloadURL().then(async (downloadURL) => {
-                        const userRef = firebase.database().ref(`users/${currentUserId}`);
-                        await userRef.update({ photoURL: downloadURL });
-                        profilePicture.src = downloadURL;
-                        showPopup('Success!', 'Profile picture updated successfully.', 'success');
-                    });
-                }
-            );
+            showPopup('Uploading...', 'Please wait while your photo is being uploaded.', 'info');
+            try {
+                const downloadURL = await uploadInventoryImage(file);
+                const userRef = firebase.database().ref(`users/${currentUserId}`);
+                await userRef.update({ photoURL: downloadURL });
+                profilePicture.src = downloadURL;
+                showPopup('Success!', 'Profile picture updated successfully.', 'success');
+            } catch (error) {
+                console.error("Upload failed:", error);
+                showPopup('Upload Failed', 'An error occurred during photo upload.', 'error');
+            }
         });
 
         const renderFaqAccordionContent = (container, data) => {

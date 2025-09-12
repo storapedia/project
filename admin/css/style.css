@@ -577,7 +577,7 @@ html, body {
     right: 0;
     bottom: 0;
     background-color: rgba(0, 0, 0, 0.7); /* Darker overlay */
-    display: flex;
+    display: none; /* Hidden by default */
     align-items: center;
     justify-content: center;
     z-index: 2000; /* Higher z-index to ensure it's on top */
@@ -588,6 +588,7 @@ html, body {
 }
 
 .modal-overlay.visible { /* Using 'visible' class as per your JS logic */
+    display: flex;
     opacity: 1;
     visibility: visible;
 }
@@ -631,9 +632,13 @@ html, body {
 /* SweetAlert2 Overrides */
 .swal2-popup {
     font-family: 'Inter', sans-serif;
-    z-index: 2001 !important; /* Ensure it's above modals */
+    z-index: 1060 !important; /* SweetAlert's default is high, but we can manage it */
     border-radius: var(--border-radius-lg) !important;
     box-shadow: var(--shadow-lg) !important;
+}
+
+.swal2-container {
+    z-index: 1050 !important;
 }
 
 .swal2-input,
@@ -801,7 +806,7 @@ html, body {
 
 .rate-row {
     display: grid;
-    grid-template-columns: 1fr 1fr 2fr 24px; /* Maintain layout */
+    grid-template-columns: 1fr 1fr 24px; /* Maintain layout */
     gap: 0.75rem; /* More gap */
     align-items: center;
     margin-bottom: 0.75rem;
@@ -1052,29 +1057,30 @@ html, body {
     width: 100%;
     height: 100%;
     background-color: rgba(0, 0, 0, 0.6);
-    display: flex;
+    display: none;
     justify-content: center;
     align-items: center;
-    z-index: 1000;
+    z-index: 2000;
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.3s ease, visibility 0.3s ease;
 }
 
 .modal-overlay.visible {
+    display: flex;
     opacity: 1;
     visibility: visible;
 }
 
 .modal-content {
-    background-color: var(--surface-color);
-    border-radius: var(--border-radius-xl);
+    background-color: white;
+    border-radius: var(--border-radius-lg);
     padding: 1.5rem;
     width: 90%;
     max-width: 600px;
     max-height: 90%;
     overflow-y: auto;
-    box-shadow: var(--shadow-xl);
+    box-shadow: var(--shadow-lg);
     transform: scale(0.9);
     transition: transform 0.3s ease;
     position: relative; /* For close button positioning */
@@ -1090,7 +1096,7 @@ html, body {
     align-items: center;
     margin-bottom: 1rem;
     padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--neutral-100);
+    border-bottom: 1px solid var(--neutral-200);
 }
 
 .modal-header h3 {
@@ -1181,4 +1187,217 @@ html, body {
 }
 .dashboard-list-item.overdue-checkout {
     background-color: var(--danger-50);
+}
+/* Quill Editor Styles */
+.ql-toolbar.ql-snow {
+    border-top-left-radius: var(--border-radius-base);
+    border-top-right-radius: var(--border-radius-base);
+    border: 1px solid var(--neutral-300);
+    border-bottom: 0;
+    padding: 6px 8px !important;
+}
+.ql-container.ql-snow {
+    border-bottom-left-radius: var(--border-radius-base);
+    border-bottom-right-radius: var(--border-radius-base);
+    border: 1px solid var(--neutral-300);
+    font-size: 0.9rem;
+}
+.ql-editor {
+    min-height: 100px;
+}
+.ql-editor.ql-blank::before{
+    color: var(--neutral-400);
+    font-style: normal;
+    left: 0.8rem !important;
+}
+.ql-editor {
+    padding: 0.6rem 0.8rem !important;
+}
+
+/* --- Tambahan Style untuk Modal Manage Storage Types --- */
+
+.modal-content.large {
+    max-width: 900px;
+    width: 95%;
+}
+
+.manage-storage-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--neutral-200);
+}
+
+.manage-storage-modal-header h3 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--neutral-800);
+}
+
+.manage-storage-modal-body {
+    padding: 1.5rem;
+    overflow-y: auto;
+    background-color: var(--neutral-100);
+    flex-grow: 1;
+}
+
+#storage-types-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 1.5rem;
+}
+
+.storage-type-card {
+    background-color: white;
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: all 0.3s ease;
+}
+.storage-type-card:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--shadow-md);
+}
+
+.card-image-container {
+    position: relative;
+    height: 150px;
+    background-color: var(--neutral-200);
+}
+
+.card-image-container img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.change-image-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background-color: rgba(0,0,0,0.6);
+    color: white;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+.change-image-btn:hover {
+    background-color: rgba(0,0,0,0.8);
+}
+.change-image-btn input {
+    display: none;
+}
+
+.card-content {
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    flex-grow: 1;
+}
+
+.card-title-input, .card-desc-textarea {
+    width: 100%;
+    border: 1px solid var(--neutral-300);
+    border-radius: var(--border-radius-base);
+    padding: 0.5rem 0.75rem;
+}
+.card-title-input {
+    font-weight: 600;
+    font-size: 1rem;
+}
+.card-desc-textarea {
+    font-size: 0.875rem;
+    resize: vertical;
+    min-height: 60px;
+}
+
+.card-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: auto; /* Push actions to the bottom */
+}
+.card-actions button {
+    flex: 1;
+    padding: 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border-radius: var(--border-radius-base);
+}
+.btn-save-type {
+    background-color: var(--primary-500);
+    color: white;
+}
+.btn-delete-type {
+    background-color: var(--neutral-200);
+    color: var(--neutral-700);
+}
+
+.add-new-card {
+    border: 2px dashed var(--neutral-300);
+    background-color: var(--neutral-50);
+    cursor: pointer;
+    min-height: 320px;
+}
+.add-new-card:hover {
+    border-color: var(--primary-500);
+    background-color: var(--primary-50);
+}
+.add-new-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--neutral-500);
+    font-weight: 600;
+}
+.add-new-content i {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+}
+
+/* --- STYLE UNTUK SLIDER FOTO DI DETAIL BOOKING --- */
+.warehouse-slider {
+    width: 100%;
+    height: 250px; /* Atur tinggi slider */
+    border-radius: var(--border-radius-lg);
+    background-color: var(--neutral-100);
+}
+
+.warehouse-slider .swiper-slide {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.warehouse-slider .swiper-slide img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* Pastikan gambar mengisi slide tanpa distorsi */
+}
+
+.swiper-button-next, .swiper-button-prev {
+    color: #fff !important;
+    background-color: rgba(0, 0, 0, 0.4);
+    border-radius: 50%;
+    width: 44px !important;
+    height: 44px !important;
+    transition: background-color 0.2s ease;
+}
+.swiper-button-next:hover, .swiper-button-prev:hover {
+    background-color: rgba(0, 0, 0, 0.6);
+}
+.swiper-button-next:after, .swiper-button-prev:after {
+    font-size: 20px !important;
+    font-weight: bold;
 }

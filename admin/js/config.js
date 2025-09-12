@@ -1,9 +1,9 @@
-    {{ .Env.NAMA_VARIABEL }}
-    const Maps_API_KEY = '{{ .Env.MAPS_API_KEY }}';
-    const STORAPEDIA_API_KEY = '{{ .Env.STORAPEDIA_API_KEY }}';
-    const STORAPEDIA_AUTH_DOMAIN = '{{ .Env.STORAPEDIA_AUTH_DOMAIN }}';
-    const STORAPEDIA_PROJECT_ID = '{{ .Env.STORAPEDIA_PROJECT_ID }}';
-    const STORAPEDIA_STORAGE_BUCKET = '{{ .Env.STORAPEDIA_STORAGE_BUCKET }}';
-    const STORAPEDIA_MESSAGING_SENDER_ID = '{{ .Env.STORAPEDIA_MESSAGING_SENDER_ID }}';
-    const STORAPEDIA_APP_ID = '{{ .Env.STORAPEDIA_APP_ID }}';
-    const STORAPEDIA_DATABASE_URL = '{{ .Env.STORAPEDIA_DATABASE_URL }}';
+const firebaseConfig = {
+  apiKey: "AIzaSyCLn-I_DTXGIrmmrxnbLu0qO6ZxfToyZwM",
+  authDomain: "storapedia-project.firebaseapp.com",
+  databaseURL: "https://storapedia-project-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "storapedia-project",
+  storageBucket: "storapedia-project.firebasestorage.app",
+  messagingSenderId: "602982028442",
+  appId: "1:602982028442:web:021b624608e7469fb87b23"
+};

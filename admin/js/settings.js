@@ -238,9 +238,13 @@ async function fetchAndRenderSettings() {
     document.getElementById('website-settings-form').addEventListener('submit', handleWebsiteSettingsSubmit);
 
     document.getElementById('setting-banner-preview').addEventListener('click', () => document.getElementById('setting-banner-image-upload').click());
+    
+    let selectedBannerFile = null;
+    
     document.getElementById('setting-banner-image-upload').addEventListener('change', (event) => {
         const file = event.target.files[0];
         if (file) {
+            selectedBannerFile = file;
             const reader = new FileReader();
             reader.onload = (e) => {
                 document.getElementById('setting-banner-preview').src = e.target.result;
@@ -249,7 +253,10 @@ async function fetchAndRenderSettings() {
         }
     });
     document.getElementById('setting-banner-imageUrl').addEventListener('input', (e) => {
-        if (e.target.value) document.getElementById('setting-banner-preview').src = e.target.value;
+        if (e.target.value) {
+            document.getElementById('setting-banner-preview').src = e.target.value;
+            selectedBannerFile = null;
+        }
     });
 }
 
@@ -330,25 +337,32 @@ function addSocialMediaRow(container, platform = '', url = '') {
 
 async function handleWebsiteSettingsSubmit(e) {
     e.preventDefault();
-    Swal.fire({
-        title: 'Saving settings...',
-        allowOutsideClick: false,
-        didOpen: () => { Swal.showLoading(); }
-    });
-
-    const imageFile = document.getElementById('setting-banner-image-upload').files[0];
+    const { uploadImage } = await import('./uploader.js');
+    
     let imageUrl = document.getElementById('setting-banner-imageUrl').value;
+    const imageFile = document.getElementById('setting-banner-image-upload').files[0];
+
     if (imageFile) {
+        Swal.fire({
+            title: 'Uploading image...',
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); }
+        });
         try {
-            const filePath = `banners/${Date.now()}-${imageFile.name}`;
-            const snapshot = await storage.ref(filePath).put(imageFile);
-            imageUrl = await snapshot.ref.getDownloadURL();
+            imageUrl = await uploadImage(imageFile);
+            Swal.close();
         } catch (error) {
             console.error("Banner image upload failed:", error);
             Swal.fire('Upload Failed', error.message, 'error');
             return;
         }
     }
+    
+    Swal.fire({
+        title: 'Saving settings...',
+        allowOutsideClick: false,
+        didOpen: () => { Swal.showLoading(); }
+    });
     
     const settings = {
         banner: {

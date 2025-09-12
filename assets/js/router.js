@@ -6,6 +6,14 @@ import Auth from './pages/auth.js';
 import Inbox from './pages/inbox.js';
 import Notifications from './pages/notifications.js';
 import AddInventory from './pages/add-inventory.js';
+import LuggageStorage from './pages/luggagestorage.js';
+import SelfStorage from './pages/selfstorage.js';
+import SurfboardStorage from './pages/surfboardstorage.js';
+import LuggageTaxi from './pages/luggagetaxi.js';
+import Terms from './pages/terms.js';
+import Privacy from './pages/privacy.js';
+import Shop from './pages/shop.js';
+import Help from './pages/help.js';
 
 const routes = {};
 
@@ -15,12 +23,21 @@ export function registerRoute(path, module) {
 
 registerRoute('/', Home);
 registerRoute('/map', Map);
+registerRoute('/shop', Shop);
 registerRoute('/bookings', Bookings);
 registerRoute('/profile', Profile);
 registerRoute('/auth', Auth);
 registerRoute('/inbox', Inbox);
 registerRoute('/notifications', Notifications);
 registerRoute('/add-inventory', AddInventory);
+registerRoute('/luggage-storage', LuggageStorage);
+registerRoute('/self-storage', SelfStorage);
+registerRoute('/surfboard-storage', SurfboardStorage);
+registerRoute('/luggage-taxi', LuggageTaxi);
+registerRoute('/terms', Terms);
+registerRoute('/privacy', Privacy);
+registerRoute('/help', Help);
+
 registerRoute('/404', {
   render: async () => `<div class="page-header"><h2 class="page-title">Page Not Found</h2></div>`
 });

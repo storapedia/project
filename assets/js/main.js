@@ -18,7 +18,8 @@ export const publicDataCache = {
     locations: null,
     reviews: null,
     vouchers: null,
-    easySteps: null
+    easySteps: null,
+    shopProducts: null
 };
 
 // --- Global State ---
@@ -26,38 +27,40 @@ let userNotificationSound = new Audio('/assets/sounds/notification.wav');
 let lastUserNotificationCount = 0;
 let hasUserInteracted = false;
 
-// --- CSS Loading Logic ---
-/**
- * Memuat stylesheet yang sesuai berdasarkan ukuran layar.
- * style.css untuk mobile dan style2.css untuk desktop.
- */
-function loadDynamicStyles() {
-    const existingLink = document.getElementById('dynamic-stylesheet');
-    if (existingLink) {
-        existingLink.remove();
+// --- Service Worker & PWA Installation Logic ---
+function setupServiceWorker() {
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/service-worker.js')
+                .then(registration => {
+                    console.log('Service Worker terdaftar: ', registration);
+                })
+                .catch(err => {
+                    console.log('Gagal mendaftar Service Worker: ', err);
+                });
+        });
     }
-
-    const link = document.createElement('link');
-    link.id = 'dynamic-stylesheet';
-    link.rel = 'stylesheet';
-
-    if (window.innerWidth >= 1024) {
-        // Desktop
-        link.href = '/assets/css/style2.css'; // Ganti dengan path yang benar jika perlu
-    } else {
-        // Mobile
-        link.href = '/assets//css/style.css'; // Ganti dengan path yang benar jika perlu
-    }
-
-    document.head.appendChild(link);
 }
 
-
-// --- PWA Installation Logic ---
 function setupInstallBanner() {
     let deferredPrompt;
-    const installBanner = document.getElementById('install-banner');
-    if (!installBanner) return;
+    const installBanner = document.createElement('div');
+    installBanner.id = 'install-banner';
+    installBanner.className = 'install-banner hidden';
+    installBanner.innerHTML = `
+        <div class="install-banner-content">
+            <img src="/assets/img/icon.png" alt="Install App" class="install-banner-icon">
+            <div class="install-banner-text">
+                <strong>Install Storapedia</strong>
+                <span>Add to your home screen for a better experience.</span>
+            </div>
+        </div>
+        <div>
+            <button id="install-button" class="btn btn-primary">Install</button>
+            <button id="close-install-banner" class="icon-btn">&times;</button>
+        </div>
+    `;
+    document.body.prepend(installBanner);
 
     const installButton = document.getElementById('install-button');
     const installText = installBanner.querySelector('.install-banner-text');
@@ -109,35 +112,25 @@ function setupInstallBanner() {
     });
 }
 
-// --- Google Maps Loading Logic (Corrected) ---
-/**
- * Loads the Google Maps script using a hardcoded API Key.
- */
-function loadGoogleMapsScript() {
-    if (document.getElementById('google-maps-script')) return;
+// --- CSS Loading Logic ---
+function loadDynamicStyles() {
+    const existingLink = document.getElementById('dynamic-stylesheet');
+    if (existingLink) {
+        existingLink.remove();
+    }
 
-    // PERBAIKAN: Kunci API dimasukkan langsung ke sini.
-    const MAPS_API_KEY = "AIzaSyADCv-AX09lIYq6Gr7Gm56rChp4kS0J08Q";
+    const link = document.createElement('link');
+    link.id = 'dynamic-stylesheet';
+    link.rel = 'stylesheet';
 
-    const script = document.createElement('script');
-    script.id = 'google-maps-script';
-    
-    // Construct the URL with the hardcoded API key.
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_API_KEY}&libraries=places,geometry&callback=storamaps_initMap`;
-    
-    script.async = true;
-    script.defer = true;
-    document.head.appendChild(script);
+    if (window.innerWidth >= 1024) {
+        link.href = '/assets/css/style2.css';
+    } else {
+        link.href = '/assets/css/style.css';
+    }
+
+    document.head.appendChild(link);
 }
-
-/**
- * This callback function must be in the global scope.
- * Google calls this function after the script has finished loading.
- */
-window.storamaps_initMap = function() {
-    // Set a global flag to indicate that the API is safe to use.
-    window.isGoogleMapsReady = true;
-};
 
 
 // --- Notification Logic ---
@@ -178,25 +171,22 @@ function listenForUserNotifications(userId) {
 function handleResize() {
     const isDesktop = window.innerWidth >= 1024;
     renderAppShell(document.getElementById('app'), isDesktop);
-    loadDynamicStyles(); // Panggil fungsi style saat resize
+    loadDynamicStyles();
     router();
 }
 
 async function main() {
     try {
         const appRoot = document.getElementById('app');
-        
+
         renderAppShell(appRoot, window.innerWidth >= 1024);
-        loadDynamicStyles(); // Panggil fungsi style saat pertama kali load
+        loadDynamicStyles();
         window.addEventListener('resize', handleResize);
+        setupServiceWorker();
         setupInstallBanner();
 
         await initializeFirebase();
-        
-        // Load the Maps script.
-        loadGoogleMapsScript();
 
-        // Register all app routes.
         registerRoute('/', Home);
         registerRoute('/map', Map);
         registerRoute('/bookings', Bookings);
@@ -204,11 +194,11 @@ async function main() {
         registerRoute('/auth', Auth);
         registerRoute('/inbox', Inbox);
         registerRoute('/notifications', Notifications);
+        // ... rute lainnya
         registerRoute('/404', {
             render: async () => `<div class="page-header"><h2 class="page-title">Page Not Found</h2></div>`
         });
 
-        // Initialize the router.
         initializeRouter();
         router();
 
@@ -216,7 +206,6 @@ async function main() {
             hasUserInteracted = true;
         }, { once: true });
 
-        // Monitor user authentication status.
         onAuthStateChanged(user => {
             const pendingBooking = sessionStorage.getItem('pendingBooking');
             if (user && pendingBooking) {
@@ -241,13 +230,13 @@ async function main() {
             }
         });
 
-        // Fetch public data.
         showLoader(true, 'Loading initial data...');
         const data = await fetchAllPublicData();
         publicDataCache.locations = data.locations;
         publicDataCache.reviews = data.reviews;
         publicDataCache.vouchers = data.vouchers;
         publicDataCache.easySteps = data.easySteps;
+        publicDataCache.shopProducts = data.shopProducts;
         showLoader(false);
 
     } catch (error) {
@@ -256,5 +245,4 @@ async function main() {
     }
 }
 
-// Run the application
 main();

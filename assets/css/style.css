@@ -854,7 +854,6 @@ p {
     display: flex;
     flex-direction: column;
     max-height: 90vh;
-    overflow: hidden;
     box-shadow: var(--shadow-lg);
 }
 
@@ -2982,4 +2981,288 @@ body {
 
 .floating-whatsapp:hover {
     transform: scale(1.1);
+}
+
+
+
+/* App-like Menu Section Styles */
+.app-menu-container {
+    background-color: #ffffff;
+    padding: 2rem 1rem;
+    margin-top: -50px; /* This pulls the menu up into the banner area */
+    position: relative;
+    z-index: 10;
+    border-radius: 1.5rem; /* Large rounded corners */
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    margin-left: 1rem;
+    margin-right: 1rem;
+}
+
+.app-menu-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    text-align: center;
+}
+
+.app-menu-item {
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    transition: transform 0.2s ease;
+}
+
+.app-menu-item:hover {
+    transform: translateY(-5px);
+}
+
+.app-menu-icon-wrapper {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1.5rem;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+
+/* Icon Colors */
+.app-menu-icon-wrapper.luggage { background: linear-gradient(135deg, #0ea5e9, #0284c7); }
+.app-menu-icon-wrapper.surfboard { background: linear-gradient(135deg, #10b981, #059669); }
+.app-menu-icon-wrapper.self-storage { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.app-menu-icon-wrapper.luggage-taxi { background: linear-gradient(135deg, #6366f1, #4f46e5); }
+
+.app-menu-item span {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: #374151; /* neutral-700 */
+}
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 480px) {
+    .app-menu-grid {
+        grid-template-columns: repeat(2, 1fr); /* 2x2 grid on small screens */
+        gap: 1.5rem;
+    }
+    .app-menu-container {
+        margin-top: -40px;
+        padding: 1.5rem;
+    }
+}
+
+/* Category Hero Section Styles */
+.category-hero-section {
+    padding: 4rem 1rem;
+    text-align: center;
+    color: white;
+    background-size: cover;
+    background-position: center;
+    border-radius: 0 0 1.5rem 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.category-hero-section h1 {
+    font-size: 2.5rem;
+    font-weight: 800;
+    text-shadow: 2px 2px 8px rgba(0,0,0,0.6);
+}
+
+.category-hero-section p {
+    font-size: 1.1rem;
+    max-width: 600px;
+    margin: 0.5rem auto 0;
+    text-shadow: 1px 1px 4px rgba(0,0,0,0.6);
+}
+
+/* Banner background images (gunakan gambar Anda sendiri) */
+.luggage-storage-banner {
+    background-image: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url('https://images.unsplash.com/photo-1588857978243-9097d7b37f40?q=80&w=2070&auto=format&fit=crop');
+}
+.surfboard-storage-banner {
+    background-image: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url('https://images.unsplash.com/photo-1531744432298-a57f6385a4a5?q=80&w=2070&auto=format&fit=crop');
+}
+.self-storage-banner {
+    background-image: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url('https://images.unsplash.com/photo-1587033361846-523154a47552?q=80&w=2070&auto=format&fit=crop');
+}
+.luggagetaxi-banner {
+    background-image: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url('https://images.unsplash.com/photo-1558223521-4d94a1a3a6fa?q=80&w=2070&auto=format&fit=crop');
+}
+
+
+/* ============================================= */
+/* PERBAIKAN UNTUK MODAL AGAR KONSISTEN & SCROLLABLE */
+/* ============================================= */
+
+.modal-content {
+    /* Menetapkan tinggi maksimal dan membuat modal menjadi fleksibel secara vertikal */
+    max-height: 85vh; /* Batasi tinggi modal agar tidak memenuhi seluruh layar */
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-body, .sp-bookings-flow-body {
+    /* Membuat area konten bisa di-scroll jika isinya lebih panjang */
+    overflow-y: auto;
+    flex-grow: 1; /* Memastikan area konten mengisi ruang yang tersedia */
+    -webkit-overflow-scrolling: touch; /* Scrolling yang lebih mulus di iOS */
+}
+
+/* Menjaga agar header dan footer tidak ikut ter-scroll */
+.modal-header, .sp-bookings-flow-header, .modal-footer, .sp-bookings-flow-footer {
+    flex-shrink: 0; /* Mencegah header dan footer menyusut */
+}
+
+.sticky-footer {
+    position: sticky;
+    bottom: 0;
+    background-color: white;
+    z-index: 10;
+}
+
+/* ============================================= */
+/* PERBAIKAN FINAL UNTUK MODAL & PETA */
+/* ============================================= */
+
+/* 1. Ukuran Modal Konsisten & Konten Scrollable */
+.modal-content {
+    height: 85vh; /* Tinggi tetap untuk konsistensi */
+    max-height: 700px;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-body, .sp-bookings-flow-body {
+    overflow-y: auto;
+    flex-grow: 1;
+    -webkit-overflow-scrolling: touch;
+}
+
+.modal-header, .sp-bookings-flow-header, .modal-footer, .sp-bookings-flow-footer {
+    flex-shrink: 0;
+}
+
+.sticky-footer {
+    position: sticky;
+    bottom: 0;
+    background-color: white;
+    z-index: 10;
+}
+
+/* 2. Z-index untuk Sugesti Peta Leaflet Geocoder */
+.leaflet-control-geocoder-alternatives {
+    z-index: 10000 !important; /* Pastikan ini lebih tinggi dari z-index modal */
+}
+
+/* 3. Perbaikan Tombol Layanan */
+.service-buttons-container .btn-full {
+    width: 100%;
+}
+
+
+
+/* =================================================== */
+/* GOOGLE MAPS AUTOCOMPLETE (PAC) FIX FOR MODALS       */
+/* =================================================== */
+.pac-container {
+    z-index: 99999 !important; /* Memaksa dropdown tampil di lapisan paling atas */
+}
+
+
+/* General Base Styles */
+/* ... (kode css yang sudah ada) ... */
+
+/* Tambahkan ini untuk memperbaiki search input di halaman shop */
+.search-container {
+    display: flex;
+    background-color: white;
+    border-radius: var(--border-radius-full);
+    padding: var(--spacing-xs);
+    box-shadow: var(--shadow-md);
+    margin: 0 auto; /* Pusatkan search bar */
+    max-width: 600px; /* Batasi lebar maksimum */
+}
+
+.search-container input {
+    width: 100%;
+    flex-grow: 1;
+    border: none;
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-radius: var(--border-radius-full);
+    font-size: 1rem;
+    color: var(--neutral-800);
+    background: transparent;
+}
+
+.search-container input:focus {
+    outline: none;
+}
+
+/* ... (kode css yang sudah ada) ... */
+
+/* Modifikasi ini untuk memperbaiki border-radius pada gambar di dalam kartu */
+.location-card-img {
+    width: 100%;
+    height: 180px;
+    object-fit: cover;
+    /* Hapus border-radius spesifik di sini agar parent (.location-card) yang mengatur */
+}
+
+/* ... (sisa kode css) ... */
+
+/* --- PERBAIKAN UNTUK MODAL REVIEW --- */
+.booking-review-body .rating-input {
+    font-size: 2.2em; /* Ukuran bintang yang lebih pas */
+    color: #FFD700; /* Warna default untuk hover */
+}
+
+.booking-review-body .rating-input .star {
+    color: #ccc; /* Warna bintang yang belum dipilih */
+    transition: color 0.2s;
+    cursor: pointer;
+}
+
+.booking-review-body #review-message {
+    border-radius: var(--border-radius-base); /* Radius sudut yang konsisten */
+    resize: vertical; /* Izinkan resize vertikal */
+}
+
+/* --- STYLE UNTUK SLIDER FOTO DI DETAIL BOOKING --- */
+.warehouse-slider {
+    width: 100%;
+    height: 250px; /* Atur tinggi slider */
+    border-radius: var(--border-radius-lg);
+    background-color: var(--neutral-100);
+}
+
+.warehouse-slider .swiper-slide {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.warehouse-slider .swiper-slide img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* Pastikan gambar mengisi slide tanpa distorsi */
+}
+
+.swiper-button-next, .swiper-button-prev {
+    color: #fff !important;
+    background-color: rgba(0, 0, 0, 0.4);
+    border-radius: 50%;
+    width: 44px !important;
+    height: 44px !important;
+    transition: background-color 0.2s ease;
+}
+.swiper-button-next:hover, .swiper-button-prev:hover {
+    background-color: rgba(0, 0, 0, 0.6);
+}
+.swiper-button-next:after, .swiper-button-prev:after {
+    font-size: 20px !important;
+    font-weight: bold;
 }

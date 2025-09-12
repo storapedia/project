@@ -1,12 +1,13 @@
 functionsDirectory = "/Users/macbook/Documents/storapedia/netlify/functions"
 functionsDirectoryOrigin = "config-v1"
 redirectsOrigin = "config"
+headersOrigin = "config"
 plugins = []
 headers = []
 
 [build]
 publish = "/Users/macbook/Documents/storapedia"
-publishOrigin = "default"
+publishOrigin = "config"
 functions = "/Users/macbook/Documents/storapedia/netlify/functions"
 
 [build.environment]

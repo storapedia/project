@@ -1,5 +1,3 @@
-// storapedia/assets/js/services/firebase-api.js
-
 import { db, storage } from '../firebase-init.js';
 
 export async function fetchAllPublicData() {
@@ -9,7 +7,8 @@ export async function fetchAllPublicData() {
         reviews: db.ref('reviews'),
         settings: db.ref('settings'),
         faqs: db.ref('faqs'),
-        easySteps: db.ref('easySteps')
+        easySteps: db.ref('easySteps'),
+        shopProducts: db.ref('shopProducts')
     };
     try {
         const snapshots = await Promise.all(Object.values(refs).map(ref => ref.once('value')));
@@ -168,14 +167,6 @@ export async function requestPickup(locationId, requestData) {
     }
 }
 
-// --- NEW INVENTORY & CATEGORY FUNCTIONS ---
-
-/**
- * Listens for real-time updates to the entire inventory for a specific booking.
- * @param {string} bookingId - The ID of the booking to listen to.
- * @param {function} callback - The function to call with the inventory data.
- * @returns {firebase.database.Reference} The Firebase reference for detaching the listener later.
- */
 export function listenForInventory(bookingId, callback) {
     const inventoryRef = db.ref(`inventories/${bookingId}`);
     inventoryRef.on('value', (snapshot) => {
@@ -184,13 +175,6 @@ export function listenForInventory(bookingId, callback) {
     return inventoryRef;
 }
 
-/**
- * Adds a new category to a booking's inventory.
- * @param {string} bookingId - The ID of the booking.
- * @param {string} categoryName - The name for the new category.
- * @param {number} sortOrder - The sort order index for the new category.
- * @returns {Promise<string>} The key of the new category.
- */
 export async function addCategoryToInventory(bookingId, categoryName, sortOrder) {
     const categoryRef = db.ref(`inventories/${bookingId}/categories`).push();
     await categoryRef.set({
@@ -201,59 +185,30 @@ export async function addCategoryToInventory(bookingId, categoryName, sortOrder)
     return categoryRef.key;
 }
 
-/**
- * Adds a new item to a specific category within a booking's inventory.
- * @param {string} bookingId - The ID of the booking.
- * @param {string} categoryId - The ID of the category to add the item to.
- * @param {object} itemData - The item data, including name, quantity, addedAt (ISO string), and sortOrder.
- */
 export async function addItemToCategory(bookingId, categoryId, itemData) {
     const itemRef = db.ref(`inventories/${bookingId}/categories/${categoryId}/items`).push();
     await itemRef.set(itemData);
-    // Update the main lastUpdatedAt timestamp for the inventory
     await db.ref(`inventories/${bookingId}`).update({ lastUpdatedAt: Date.now() });
 }
 
-/**
- * Removes a specific item from a category.
- * @param {string} bookingId - The ID of the booking.
- * @param {string} categoryId - The ID of the category containing the item.
- * @param {string} itemId - The ID of the item to remove.
- */
 export async function removeItemFromCategory(bookingId, categoryId, itemId) {
     const itemRef = db.ref(`inventories/${bookingId}/categories/${categoryId}/items/${itemId}`);
     await itemRef.remove();
     await db.ref(`inventories/${bookingId}`).update({ lastUpdatedAt: Date.now() });
 }
 
-/**
- * Removes an entire category and all items within it.
- * @param {string} bookingId - The ID of the booking.
- * @param {string} categoryId - The ID of the category to remove.
- */
 export async function removeCategory(bookingId, categoryId) {
     const categoryRef = db.ref(`inventories/${bookingId}/categories/${categoryId}`);
     await categoryRef.remove();
     await db.ref(`inventories/${bookingId}`).update({ lastUpdatedAt: Date.now() });
 }
 
-/**
- * Updates the sort order for categories or items in a single operation.
- * @param {string} bookingId - The ID of the booking.
- * @param {object} updates - An object containing the paths and new values for sortOrder.
- * e.g., { 'categories/cat1/sortOrder': 0, 'categories/cat2/sortOrder': 1 }
- */
 export async function updateSortOrder(bookingId, updates) {
     const inventoryRef = db.ref(`inventories/${bookingId}`);
     await inventoryRef.update(updates);
     await inventoryRef.update({ lastUpdatedAt: Date.now() });
 }
 
-/**
- * Adds an inventory item to a specific booking.
- * @param {string} bookingId - The ID of the booking.
- * @param {object} inventoryItem - The item data to be added.
- */
 export const addInventoryItem = async (bookingId, inventoryItem) => {
     try {
         const inventoriesRef = db.ref(`bookings/${bookingId}/inventories`);
@@ -264,33 +219,28 @@ export const addInventoryItem = async (bookingId, inventoryItem) => {
     }
 };
 
-/**
- * Uploads an inventory image to Firebase Storage.
- * @param {string} bookingId - The ID of the booking.
- * @param {File} imageFile - The image file to upload.
- * @returns {Promise<string>} The download URL of the uploaded image.
- */
-export const uploadInventoryImage = async (bookingId, imageFile) => {
+export const uploadInventoryImage = async (imageFile) => {
     try {
-        const storageRef = storage.ref();
-        const imagePath = `inventories/${bookingId}/${Date.now()}-${imageFile.name}`;
-        const imageRef = storageRef.child(imagePath);
+        const formData = new FormData();
+        formData.append('file', imageFile);
 
-        const snapshot = await imageRef.put(imageFile);
-        const downloadUrl = await snapshot.ref.getDownloadURL();
-        return downloadUrl;
+        const response = await fetch('/.netlify/functions/imageupload', {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            throw new Error('Gagal mengunggah gambar ke Netlify');
+        }
+
+        const result = await response.json();
+        return result.url;
     } catch (error) {
-        console.error("Error uploading inventory image:", error);
+        console.error("Error uploading image to Netlify:", error);
         throw error;
     }
 };
 
-/**
- * Sends a chat message to a courier and also logs it for the admin.
- * @param {string} userId - The user's ID.
- * @param {string} courierId - The courier's ID.
- * @param {string} messageText - The message content.
- */
 export async function sendMessageToCourierAndAdmin(userId, courierId, messageText) {
   try {
     const userChatRef = db.ref(`chats/${userId}`).push();
@@ -326,4 +276,15 @@ export async function sendMessageToCourierAndAdmin(userId, courierId, messageTex
     console.error("Error sending message to courier and admin:", error);
     throw error;
   }
+}
+
+export async function getDataFromPath(path) {
+    if (!path) return null;
+    try {
+        const snapshot = await db.ref(path).once('value');
+        return snapshot;
+    } catch (error) {
+        console.error(`Error fetching data from path ${path}:`, error);
+        throw error;
+    }
 }
