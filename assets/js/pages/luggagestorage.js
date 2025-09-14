@@ -27,7 +27,6 @@ async function renderFilteredLocations(categoryName) {
         const locationsMap = publicDataCache.locations || {};
         const allLocations = Object.keys(locationsMap).map(id => ({ id, ...locationsMap[id] }));
 
-        // Filter locations that offer the specified category
         const filteredLocations = allLocations.filter(loc =>
             loc.categories && loc.categories.some(cat => cat.name === categoryName)
         );
@@ -61,7 +60,6 @@ async function renderFilteredLocations(categoryName) {
             `;
         }).join('');
 
-        // Add event listeners after rendering
         container.querySelectorAll('[data-action="view-details"]').forEach(button => {
             button.addEventListener('click', e => {
                 const locationId = e.target.closest('.location-card').dataset.locationId;
