@@ -11,6 +11,33 @@ const formatDate = (timestamp) => {
     return new Date(timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
+/**
+ * Formats the creation date of the booking into a relative or absolute string.
+ * @param {number} timestamp - The creation timestamp of the booking.
+ * @returns {string} Formatted date string (e.g., "Today", "Yesterday", "15 Sep 2025").
+ */
+const formatBookingCreationDate = (timestamp) => {
+    if (!timestamp) return 'Unknown date';
+
+    const now = new Date();
+    const bookingDate = new Date(timestamp);
+
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+
+    if (bookingDate >= startOfToday) {
+        return 'Today';
+    } else if (bookingDate >= startOfYesterday) {
+        return 'Yesterday';
+    } else {
+        return bookingDate.toLocaleDateString('en-GB', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric'
+        });
+    }
+};
+
 const formatDateTime = (timestamp) => {
     if (!timestamp) return '';
     return new Date(timestamp).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -231,7 +258,7 @@ async function showBookingDetailsModal(booking) {
             </div>
         `;
     }
-    
+
     let suppliesHtml = '';
     if (booking.supplies && booking.supplies.length > 0) {
         const suppliesList = booking.supplies.map(item => `
@@ -378,7 +405,7 @@ async function showBookingDetailsModal(booking) {
         modal.classList.add('booking-details-modal-overlay');
         document.body.appendChild(modal);
     }
-    
+
     modal.innerHTML = `<div class="booking-details-modal-content">${modalContent}</div>`;
     modal.style.display = 'flex';
 
@@ -387,7 +414,7 @@ async function showBookingDetailsModal(booking) {
         modal.remove();
     });
 
-    if (booking.warehousePhotoUrls && booking.warehousePhotoUrls.length > 0) {
+    if (booking.warehousePhotoUrls && booking.warehousePhotoUrls.length > 0 && typeof Swiper !== 'undefined') {
         new Swiper('.warehouse-slider', {
             navigation: {
                 nextEl: '.swiper-button-next',
@@ -598,7 +625,7 @@ async function showPayToCheckInModal(bookingToPay) {
             </div>
 
             <div class="booking-detail-actions">
-                <button class="btn btn-primary" id="confirm-pay-checkin-btn"><i class="fas fa-check-circle"></i> Confirm Payment & Check In</button>
+                <button class="btn btn-primary" id="confirm-pay-checkin-btn"><i class="fas fa-check-circle"></i> Pay Now</button>
             </div>
         </div>
     `;
@@ -740,6 +767,7 @@ async function renderBookingsList(bookings) {
     const bookingHtmlPromises = bookings.map(async booking => {
         const statusNotificationHtml = await getBookingStatusNotification(booking);
         const actionButtons = await getBookingCardActionButtons(booking);
+        const formattedCreationDate = formatBookingCreationDate(booking.createdAt);
         
         let pickupStatusBadgeHtml = '';
         if (booking.serviceType === 'pickup' && !['checked_in', 'completed', 'cancelled'].includes(booking.bookingStatus)) {
@@ -766,9 +794,17 @@ async function renderBookingsList(bookings) {
                             <p class="booking-card-info"><b>${formatDate(booking.startDate)}</b> to <b>${formatDate(booking.endDate)}</b></p>
                             ${statusNotificationHtml}
                         </div>
-                        <span class="booking-status-badge status-${booking.bookingStatus || 'active'}">
-                            ${(booking.bookingStatus || 'active').replace(/_/g, ' ')}
-                        </span>
+                        <div style="text-align: right; flex-shrink: 0; margin-left: 1rem;">
+                            <span class="booking-status-badge status-${booking.bookingStatus || 'active'}">
+                                ${(booking.bookingStatus || 'active').replace(/_/g, ' ')}
+                            </span>
+                            <p class="booking-card-info" style="font-size: 0.8rem; color: #6B7280; margin-top: 0.5rem; margin-bottom: 0.25rem;">
+                                Booked: ${formattedCreationDate}
+                            </p>
+                            <p class="booking-card-info" style="font-size: 0.8rem; color: #6B7280; margin: 0; font-family: monospace;">
+                                ID: ${booking.id.slice(-8).toUpperCase()}
+                            </p>
+                        </div>
                     </div>
                     <div class="booking-actions">
                         <div class="action-buttons-group">
@@ -806,7 +842,7 @@ async function renderBookingsList(bookings) {
                     renderPayToCheckInModal(selectedBooking);
                     break;
                 case 'review':
-                    showReviewModal(selectedBooking); // Panggil fungsi yang sudah diperbaiki
+                    showReviewModal(selectedBooking);
                     break;
             }
         });

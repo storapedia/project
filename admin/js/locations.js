@@ -1,7 +1,74 @@
 let quillInstances = {};
 let locationMapInstance = null;
 let locationMarkerInstance = null;
+let cropper;
+let currentSizeImagePreview;
 
+// --- FUNGSI UNTUK CROP GAMBAR ---
+function openCropperModal(file) {
+    const modal = document.getElementById('cropper-modal');
+    const image = document.getElementById('cropper-image');
+    const reader = new FileReader();
+
+    reader.onload = function (e) {
+        image.src = e.target.result;
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        
+        if (cropper) {
+            cropper.destroy();
+        }
+
+        cropper = new Cropper(image, {
+            aspectRatio: 16 / 10,
+            viewMode: 1,
+            autoCropArea: 0.95,
+            responsive: true,
+            background: false,
+        });
+    };
+    reader.readAsDataURL(file);
+}
+
+document.getElementById('cropper-save-btn').addEventListener('click', async () => {
+    if (!cropper || !currentSizeImagePreview) return;
+    
+    Swal.fire({ title: 'Processing Image...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+    cropper.getCroppedCanvas({ width: 800 }).toBlob(async (blob) => {
+        try {
+            const { uploadImage } = await import('./uploader.js');
+            const fileName = `size-image-${Date.now()}.png`;
+            const imageFile = new File([blob], fileName, { type: 'image/png' });
+
+            const imageUrl = await uploadImage(imageFile);
+            
+            const imgElement = currentSizeImagePreview.querySelector('img');
+            const iconElement = currentSizeImagePreview.querySelector('.placeholder-icon');
+            imgElement.src = imageUrl;
+            imgElement.classList.remove('hidden');
+            iconElement.classList.add('hidden');
+            
+            currentSizeImagePreview.dataset.imageUrl = imageUrl;
+
+            document.getElementById('cropper-modal').classList.add('hidden');
+            cropper.destroy();
+            Swal.close();
+
+        } catch (error) {
+            Swal.fire('Upload Failed', error.message, 'error');
+        }
+    }, 'image/png');
+});
+
+document.getElementById('cropper-cancel-btn').addEventListener('click', () => {
+    document.getElementById('cropper-modal').classList.add('hidden');
+    if (cropper) {
+        cropper.destroy();
+    }
+});
+
+// --- FUNGSI RENDER UTAMA ---
 window.renderLocationsTable = function(locations) {
     const tbody = document.getElementById('locations-table-body');
     const cardView = document.getElementById('locations-card-view');
@@ -48,7 +115,6 @@ window.renderLocationsTable = function(locations) {
 };
 
 async function renderLocationEditor(container, locationId) {
-    const { uploadImage } = await import('./uploader.js');
     quillInstances = {};
     let selectedImageFile = null;
 
@@ -66,11 +132,10 @@ async function renderLocationEditor(container, locationId) {
             const typesSnapshot = await db.ref('settings/storageTypes').once('value');
             window.allStorageTypes = typesSnapshot.val() || {};
         }
-
-        const storageTypeOptionsHtml = Object.entries(allStorageTypes).map(([id, type]) => {
-            const isChecked = Array.isArray(loc.categories) && loc.categories.some(cat => cat.id === id);
-            return `<div class="p-2 border-b last:border-b-0"><label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" class="storage-type-cb" data-id="${id}" ${isChecked ? 'checked' : ''}><span class="font-semibold text-sm">${type.name}</span></label></div>`;
-        }).join('');
+        
+        const storageTypeTabsHtml = Object.keys(allStorageTypes).length > 0
+            ? Object.entries(allStorageTypes).map(([id, type]) => `<button type="button" class="storage-type-tab" data-category-id="${id}">${type.name}</button>`).join('')
+            : '<p class="text-sm text-gray-500 p-2">No storage types defined. Please add them in the settings.</p>';
 
         const openingHoursHtml = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => `
             <div class="grid grid-cols-3 gap-2 items-center">
@@ -90,15 +155,21 @@ async function renderLocationEditor(container, locationId) {
                 <div class="tabs-container">
                     <div class="tab-buttons flex border-b mb-4 flex-wrap">
                         <button type="button" class="tab-button px-3 py-2 text-xs font-medium text-center border-b-2 active-tab" data-tab-name="basic">Basic Info</button>
-                        <button type="button" class="tab-button px-3 py-2 text-xs font-medium text-center border-b-2 border-transparent" data-tab-name="address">Address</button>
+                        <button type="button" class="tab-button px-3 py-2 text-xs font-medium text-center border-b-2 border-transparent" data-tab-name="address">Address & Map</button>
                         <button type="button" class="tab-button px-3 py-2 text-xs font-medium text-center border-b-2 border-transparent" data-tab-name="media">Media & Features</button>
-                        <button type="button" class="tab-button px-3 py-2 text-xs font-medium text-center border-b-2 border-transparent" data-tab-name="storage">Storage</button>
+                        <button type="button" class="tab-button px-3 py-2 text-xs font-medium text-center border-b-2 border-transparent" data-tab-name="storage">Storage Variants</button>
                         <button type="button" class="tab-button px-3 py-2 text-xs font-medium text-center border-b-2 border-transparent" data-tab-name="hours">Opening Hours</button>
                     </div>
                     <form id="location-form" class="text-left">
                         <div id="basic" class="tab-content space-y-3">
-                            <input id="loc-name" class="input-field" placeholder="Location Name" value="${loc.name || ''}">
-                            <div id="loc-desc-editor"></div>
+                             <div>
+                                <label class="form-label">Location Name</label>
+                                <input id="loc-name" class="input-field" placeholder="e.g., Storapedia Gudang Jakarta" value="${loc.name || ''}">
+                             </div>
+                             <div>
+                                <label class="form-label">Description</label>
+                                <div id="loc-desc-editor"></div>
+                             </div>
                         </div>
                         <div id="address" class="tab-content hidden space-y-3">
                             <input id="loc-address-search" class="input-field" placeholder="Search Address..." value="${loc.address || ''}">
@@ -113,7 +184,7 @@ async function renderLocationEditor(container, locationId) {
                                 <img id="loc-image-img" src="${loc.imageUrl || ''}" class="absolute w-full h-full object-cover rounded-lg ${loc.imageUrl ? '' : 'hidden'}"/>
                                 <div id="loc-image-placeholder" class="text-center text-gray-400 ${loc.imageUrl ? 'hidden' : ''}">
                                     <i class="fas fa-image text-4xl"></i>
-                                    <p class="mt-2 text-sm">Click to upload</p>
+                                    <p class="mt-2 text-sm">Click to upload main image</p>
                                 </div>
                             </div>
                             <input id="loc-image-upload" type="file" class="hidden" accept="image/*">
@@ -123,17 +194,17 @@ async function renderLocationEditor(container, locationId) {
                             <button type="button" id="add-feature-btn" class="btn btn-secondary btn-sm"><i class="fas fa-plus"></i> Add Feature</button>
                         </div>
                         <div id="storage" class="tab-content hidden space-y-4">
-                            <div class="grid md:grid-cols-2 gap-4">
-                                <div>
-                                    <h4 class="font-semibold mb-2">Available Storage Types</h4>
-                                    <div id="categories-container" class="border rounded-lg max-h-60 overflow-y-auto">${storageTypeOptionsHtml}</div>
+                            <div class="w-full">
+                                <label class="form-label">Available Storage Types</label>
+                                <div class="storage-type-tabs-container">
+                                    ${storageTypeTabsHtml}
                                 </div>
-                                <div>
-                                    <h4 class="font-semibold mb-2">Total Capacity</h4>
-                                    <input type="number" id="loc-total-capacity" class="input-field" placeholder="Total units" value="${loc.totalCapacity || ''}">
-                                </div>
+                                <div id="storage-type-content-container" class="mt-4"></div>
                             </div>
-                            <div id="sizes-container" class="mt-4 flex flex-col gap-4"></div>
+                            <div class="mt-6 border-t pt-4">
+                                <label class="form-label">Total Capacity</label>
+                                <input type="number" id="loc-total-capacity" class="input-field" placeholder="Total units available at this location" value="${loc.totalCapacity || ''}">
+                            </div>
                         </div>
                         <div id="hours" class="tab-content hidden">
                             <h4 class="font-semibold mb-2">Opening Hours</h4>
@@ -147,51 +218,60 @@ async function renderLocationEditor(container, locationId) {
         initializeEditorComponents(loc);
 
         document.getElementById('save-location-btn').addEventListener('click', async () => {
-            const existingData = isEdit ? (await db.ref(`storageLocations/${locationId}`).once('value')).val() : {};
-            let imageUrl = existingData.imageUrl || '';
-            if (selectedImageFile) {
-                Swal.fire({ title: 'Uploading Image...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-                try {
-                    imageUrl = await uploadImage(selectedImageFile);
-                } catch (error) {
-                    Swal.fire('Upload Failed', error.message, 'error');
-                    return;
-                }
-            }
-
+            const { uploadImage } = await import('./uploader.js');
             const form = document.getElementById('location-form');
             const getValue = (id) => form.querySelector(`#${id}`)?.value || '';
 
+            Swal.fire({ title: 'Saving Location...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+            let mainImageUrl = loc.imageUrl || '';
+            if (selectedImageFile) {
+                try {
+                    mainImageUrl = await uploadImage(selectedImageFile);
+                } catch (error) {
+                    return Swal.fire('Upload Failed', `Failed to upload main location image: ${error.message}`, 'error');
+                }
+            }
+            
+            const categoriesData = Array.from(form.querySelectorAll('.storage-type-form-container')).map(formContainer => {
+                const categoryId = formContainer.dataset.categoryId;
+                const categoryData = allStorageTypes[categoryId];
+                if (!categoryData) return null;
+
+                const sizes = Array.from(formContainer.querySelectorAll('.size-group')).map(sizeGroup => {
+                    const name = sizeGroup.querySelector('.size-name')?.value;
+                    if (!name) return null;
+                    return {
+                        name: name,
+                        imageUrl: sizeGroup.querySelector('.size-image-preview')?.dataset.imageUrl || '',
+                        description: quillInstances[sizeGroup.querySelector('.quill-editor-container')?.id]?.root.innerHTML || '',
+                        capacity: parseInt(sizeGroup.querySelector('.size-capacity')?.value, 10) || 0,
+                        rates: Array.from(sizeGroup.querySelectorAll('.rate-row')).map(rateRow => ({
+                            duration: rateRow.querySelector('.rate-duration')?.value,
+                            price: parseFloat((rateRow.querySelector('.rate-price')?.value || '0').replace(',', '.')) || 0
+                        })).filter(r => r.duration && r.price > 0)
+                    }
+                }).filter(Boolean);
+                
+                if (sizes.length === 0) return null;
+
+                return { id: categoryId, name: categoryData.name, sizes, totalCapacity: sizes.reduce((acc, size) => acc + (size.capacity || 0), 0) };
+            }).filter(Boolean);
+
             const updatedData = {
-                ...existingData,
                 name: getValue('loc-name'),
                 address: getValue('loc-address-search'),
                 description: quillInstances['main_desc']?.root.innerHTML || '',
-                imageUrl,
+                imageUrl: mainImageUrl,
                 geolocation: {
-                    latitude: parseFloat(getValue('loc-lat')) || existingData.geolocation?.latitude || 0,
-                    longitude: parseFloat(getValue('loc-lng')) || existingData.geolocation?.longitude || 0,
+                    latitude: parseFloat(getValue('loc-lat')) || 0,
+                    longitude: parseFloat(getValue('loc-lng')) || 0,
                 },
                 features: Array.from(form.querySelectorAll('.feature-row')).map(row => ({
                     name: row.querySelector('.feature-name')?.value,
                     icon: row.querySelector('.feature-icon-display')?.className.split(' ').slice(1).join(' ')
                 })).filter(f => f.name && f.icon),
-                categories: Array.from(form.querySelectorAll('.storage-type-cb:checked')).map(cb => {
-                    const categoryId = cb.dataset.id;
-                    const categoryData = allStorageTypes[categoryId];
-                    const categoryForm = form.querySelector(`#storage-type-form-${categoryId}`);
-                    if (!categoryForm) return null;
-                    const sizes = Array.from(categoryForm.querySelectorAll('.size-group')).map(sizeGroup => ({
-                        name: sizeGroup.querySelector('.size-name')?.value,
-                        description: quillInstances[sizeGroup.querySelector('.quill-editor-container')?.id]?.root.innerHTML || '',
-                        capacity: parseInt(sizeGroup.querySelector('.size-capacity')?.value, 10) || 0,
-                        rates: Array.from(sizeGroup.querySelectorAll('.rate-row')).map(rateRow => ({
-                            duration: rateRow.querySelector('.rate-duration')?.value,
-                            price: parseFloat(rateRow.querySelector('.rate-price')?.value.replace(',', '.')) || 0
-                        })).filter(r => r.duration && r.price > 0)
-                    })).filter(s => s.name);
-                    return { id: categoryId, name: categoryData.name, sizes, totalCapacity: sizes.reduce((acc, size) => acc + (size.capacity || 0), 0) };
-                }).filter(Boolean),
+                categories: categoriesData,
                 totalCapacity: parseInt(getValue('loc-total-capacity'), 10) || 0,
                 openingHours: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].reduce((acc, day) => {
                     const open = getValue(`open-${day.toLowerCase()}`);
@@ -202,11 +282,9 @@ async function renderLocationEditor(container, locationId) {
             };
 
             if (!updatedData.name) {
-                Swal.fire('Validation Error', 'Location name is required.', 'error');
-                return;
+                return Swal.fire('Validation Error', 'Location name is required.', 'error');
             }
 
-            Swal.fire({ title: 'Saving...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
             const ref = locationId ? db.ref(`storageLocations/${locationId}`) : db.ref('storageLocations').push();
             ref.set(updatedData)
                 .then(() => {
@@ -237,39 +315,35 @@ async function renderLocationEditor(container, locationId) {
             (locData.features || []).forEach(f => addFeatureRow(featuresContainer, faIcons, f.name, f.icon));
             document.getElementById('add-feature-btn').addEventListener('click', () => addFeatureRow(featuresContainer, faIcons));
 
-            const categoriesContainer = document.getElementById('categories-container');
-            const sizesContainer = document.getElementById('sizes-container');
-            categoriesContainer.addEventListener('change', (e) => {
-                if (e.target.matches('.storage-type-cb')) {
-                    const cb = e.target;
-                    const categoryId = cb.dataset.id;
-                    const category = allStorageTypes[categoryId];
-                    const formContainerId = `storage-type-form-${categoryId}`;
-                    let formContainer = document.getElementById(formContainerId);
-                    if (cb.checked) {
-                        if (!formContainer) {
-                            formContainer = document.createElement('div');
-                            formContainer.id = formContainerId;
-                            sizesContainer.appendChild(formContainer);
-                            const existingData = locData.categories?.find(c => c.id === categoryId);
-                            renderStorageTypeForm(formContainer, category.name, existingData || { id: categoryId, name: category.name });
-                        }
-                    } else {
-                        if (formContainer) formContainer.remove();
-                    }
+            const storageTabsContainer = document.querySelector('.storage-type-tabs-container');
+            const storageContentContainer = document.getElementById('storage-type-content-container');
+
+            storageTabsContainer.addEventListener('click', (e) => {
+                if (!e.target.matches('.storage-type-tab')) return;
+                const tabButton = e.target;
+                const categoryId = tabButton.dataset.categoryId;
+                storageTabsContainer.querySelectorAll('.storage-type-tab').forEach(tab => tab.classList.remove('active'));
+                tabButton.classList.add('active');
+                storageContentContainer.querySelectorAll('.storage-type-content').forEach(content => content.classList.remove('active'));
+                let contentDiv = storageContentContainer.querySelector(`.storage-type-content[data-category-id="${categoryId}"]`);
+                if (!contentDiv) {
+                    contentDiv = document.createElement('div');
+                    contentDiv.className = 'storage-type-content';
+                    contentDiv.dataset.categoryId = categoryId;
+                    storageContentContainer.appendChild(contentDiv);
+                    const categoryData = allStorageTypes[categoryId];
+                    const existingCategory = (locData.categories || []).find(c => c.id === categoryId);
+                    renderStorageTypeForm(contentDiv, categoryData.name, existingCategory || { id: categoryId, name: categoryData.name, sizes: [] });
                 }
+                contentDiv.classList.add('active');
             });
 
-            if (Array.isArray(locData.categories)) {
-                locData.categories.forEach(cat => {
-                    const cb = categoriesContainer.querySelector(`input[data-id="${cat.id}"]`);
-                    if (cb?.checked) {
-                        const formContainer = document.createElement('div');
-                        formContainer.id = `storage-type-form-${cat.id}`;
-                        sizesContainer.appendChild(formContainer);
-                        renderStorageTypeForm(formContainer, cat.name, cat);
-                    }
-                });
+            let firstTabToActivate = storageTabsContainer.querySelector('.storage-type-tab');
+            if (isEdit && locData.categories && locData.categories.length > 0) {
+                 firstTabToActivate = storageTabsContainer.querySelector(`.storage-type-tab[data-category-id="${locData.categories[0].id}"]`) || firstTabToActivate;
+            }
+            if (firstTabToActivate) {
+                firstTabToActivate.click();
             }
 
             const imageInput = document.getElementById('loc-image-upload');
@@ -294,35 +368,150 @@ async function renderLocationEditor(container, locationId) {
     }
 }
 
-window.initializeLocationModalMap = function(initialCoords = {}) {
-    if (typeof google === 'undefined' || !google.maps) {
-        console.error("Google Maps script not loaded.");
-        return;
-    }
+function renderStorageTypeForm(container, categoryName, locationCategory = {}) {
+    const sizes = (locationCategory.sizes && locationCategory.sizes.length > 0) ? locationCategory.sizes : [{ name: '', description: '', capacity: 0, rates: [] }];
+    const sizesHtml = sizes.map(size => addSizeGroupHtml(size)).join('');
 
+    container.innerHTML = `
+        <div class="p-4 border rounded-lg bg-gray-50/50 storage-type-form-container" data-category-id="${locationCategory.id}">
+             <div class="flex justify-between items-center mb-4">
+                <h5 class="font-semibold text-lg text-gray-800">${categoryName} Variants</h5>
+                <p class="text-xs text-gray-500">Add at least one variant to offer this storage type.</p>
+            </div>
+            <div class="sizes-container space-y-4">${sizesHtml}</div>
+            <button type="button" class="add-size-btn text-sm font-semibold text-blue-600 hover:text-blue-800 mt-4"><i class="fas fa-plus mr-1"></i>Add another Variant</button>
+        </div>`;
+
+    const sizesContainer = container.querySelector('.sizes-container');
+    container.querySelector('.add-size-btn').addEventListener('click', () => addSizeGroup(sizesContainer));
+    
+    sizesContainer.querySelectorAll('.quill-editor-container').forEach(editorDiv => {
+        const editorId = editorDiv.id;
+        quillInstances[editorId] = new Quill(editorDiv, { theme: 'snow', placeholder: 'Describe this variant...' });
+        if(editorDiv.dataset.initialValue) {
+           quillInstances[editorId].root.innerHTML = editorDiv.dataset.initialValue;
+        }
+    });
+    
+    sizesContainer.addEventListener('click', function(e) {
+        if (e.target.closest('.remove-size-btn')) {
+            const sizeGroup = e.target.closest('.size-group');
+            if (sizesContainer.querySelectorAll('.size-group').length > 1) {
+                sizeGroup.remove();
+            } else {
+                Swal.fire('Info', 'At least one variant form is required. You can leave it empty to exclude it from saving.', 'info');
+            }
+        }
+        if (e.target.closest('.add-rate-btn')) {
+            addPricingRateRow(e.target.closest('.add-rate-btn').previousElementSibling);
+        }
+        if (e.target.closest('.size-image-preview')) {
+            currentSizeImagePreview = e.target.closest('.size-image-preview');
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = 'image/*';
+            fileInput.onchange = (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    openCropperModal(file);
+                }
+            };
+            fileInput.click();
+        }
+    });
+}
+
+function addSizeGroupHtml(size = {}) {
+    const editorId = `size-desc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const ratesHtml = (size.rates && size.rates.length > 0) 
+        ? size.rates.map(rate => addPricingRateRowHtml(rate)).join('')
+        : addPricingRateRowHtml();
+
+    const hasImage = !!size.imageUrl;
+    
+    return `
+        <div class="size-group border p-4 rounded-lg bg-white shadow-sm relative">
+            <button type="button" class="remove-size-btn absolute -top-2 -right-2 text-red-500 bg-white rounded-full h-6 w-6 flex items-center justify-center border shadow hover:bg-red-500 hover:text-white transition-colors"><i class="fas fa-times text-xs"></i></button>
+            
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-6">
+                
+                <div class="md:col-span-2">
+                    <label class="form-label">Variant Image</label>
+                    <div class="size-image-preview" data-image-url="${size.imageUrl || ''}">
+                        <img src="${size.imageUrl || ''}" class="w-full h-full object-cover ${hasImage ? '' : 'hidden'}">
+                        <i class="fas fa-image placeholder-icon ${hasImage ? 'hidden' : ''}"></i>
+                        <div class="change-image-overlay">Click to upload/change</div>
+                    </div>
+                </div>
+
+                <div class="md:col-span-3 space-y-4">
+                    <div>
+                        <label class="form-label">Variant Name / Size</label>
+                        <input type="text" class="size-name input-field" placeholder="e.g., 2m x 3m Unit" value="${size.name || ''}">
+                    </div>
+                    <div>
+                        <label class="form-label">Description</label>
+                        <div id="${editorId}" class="quill-editor-container" data-initial-value="${size.description || ''}"></div>
+                    </div>
+                    <div>
+                        <label class="form-label">Capacity (Units)</label>
+                        <input type="number" class="size-capacity input-field" placeholder="Number of units for this variant" value="${size.capacity || ''}">
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4 border-t pt-4">
+                <h6 class="font-semibold text-sm mb-2">Pricing</h6>
+                <div class="rates-list space-y-2">${ratesHtml}</div>
+                <button type="button" class="add-rate-btn text-xs font-semibold text-blue-600 hover:text-blue-800 mt-2"><i class="fas fa-plus mr-1"></i>Add Rate</button>
+            </div>
+        </div>`;
+}
+
+function addPricingRateRowHtml(rate = {}) {
+    const options = ['Daily', 'Weekly', 'Monthly'];
+    const durationOptionsHtml = options.map(opt => 
+        `<option value="${opt}" ${rate.duration === opt ? 'selected' : ''}>${opt}</option>`
+    ).join('');
+
+    return `
+        <div class="rate-row grid grid-cols-10 gap-2 items-center">
+            <div class="col-span-4">
+                 <select class="rate-duration input-field text-sm p-2 w-full">${durationOptionsHtml}</select>
+            </div>
+            <div class="col-span-5">
+                <input type="text" class="rate-price input-field text-sm p-2 w-full" placeholder="e.g., 500,000" value="${rate.price || ''}">
+            </div>
+            <div class="col-span-1 text-right">
+                <button type="button" class="remove-rate-btn text-gray-400 hover:text-red-600" onclick="this.closest('.rate-row').remove()"><i class="fas fa-trash-alt"></i></button>
+            </div>
+        </div>`;
+}
+
+function addSizeGroup(container) {
+    const newHtml = addSizeGroupHtml();
+    container.insertAdjacentHTML('beforeend', newHtml);
+    const newSizeGroup = container.lastElementChild;
+    const editorDiv = newSizeGroup.querySelector('.quill-editor-container');
+    const editorId = editorDiv.id;
+    quillInstances[editorId] = new Quill(editorDiv, { theme: 'snow', placeholder: 'Size description...' });
+}
+
+function addPricingRateRow(container) {
+    container.insertAdjacentHTML('beforeend', addPricingRateRowHtml());
+}
+
+window.initializeLocationModalMap = function(initialCoords = {}) {
+    if (typeof google === 'undefined' || !google.maps) { return; }
     const defaultCenter = { lat: -8.6702, lng: 115.2124 };
     const center = (initialCoords.lat && initialCoords.lng) ? initialCoords : defaultCenter;
     const mapElement = document.getElementById('location-map');
-
     if (!mapElement) return;
-
-    locationMapInstance = new google.maps.Map(mapElement, {
-        center,
-        zoom: 13,
-        disableDefaultUI: true,
-        zoomControl: true,
-    });
-
-    locationMarkerInstance = new google.maps.Marker({
-        position: center,
-        map: locationMapInstance,
-        draggable: true,
-    });
-
+    locationMapInstance = new google.maps.Map(mapElement, { center, zoom: 13, disableDefaultUI: true, zoomControl: true });
+    locationMarkerInstance = new google.maps.Marker({ position: center, map: locationMapInstance, draggable: true });
     const searchInput = document.getElementById('loc-address-search');
     const autocomplete = new google.maps.places.Autocomplete(searchInput);
     autocomplete.bindTo('bounds', locationMapInstance);
-
     autocomplete.addListener('place_changed', () => {
         const place = autocomplete.getPlace();
         if (place.geometry) {
@@ -333,7 +522,6 @@ window.initializeLocationModalMap = function(initialCoords = {}) {
             document.getElementById('loc-address-search').value = place.formatted_address || '';
         }
     });
-
     locationMarkerInstance.addListener('dragend', (e) => {
         const position = e.latLng.toJSON();
         updateLatLngInputs(position);
@@ -344,7 +532,6 @@ window.initializeLocationModalMap = function(initialCoords = {}) {
             }
         });
     });
-
     updateLatLngInputs(center);
 };
 
@@ -363,86 +550,16 @@ function addFeatureRow(container, iconList, name = '', icon = 'fas fa-check') {
     row.querySelector('.feature-icon-btn').addEventListener('click', (e) => openIconPicker(e.currentTarget));
 }
 
-function renderStorageTypeForm(container, categoryName, locationCategory = {}) {
-    const sizes = locationCategory.sizes || [{ name: '', description: '', capacity: 0, rates: [] }];
-    const sizesHtml = sizes.map(size => addSizeGroupHtml(size)).join('');
-
-    container.innerHTML = `
-        <div class="p-3 border rounded-lg bg-gray-50">
-            <h5 class="font-semibold text-base">${categoryName} Sizes</h5>
-            <div class="sizes-container space-y-3 mt-2">${sizesHtml}</div>
-            <button type="button" class="add-size-btn text-sm font-semibold text-blue-600 mt-2"><i class="fas fa-plus mr-1"></i>Add Size</button>
-        </div>`;
-
-    const sizesContainer = container.querySelector('.sizes-container');
-    container.querySelector('.add-size-btn').addEventListener('click', () => addSizeGroup(sizesContainer));
-
-    sizesContainer.querySelectorAll('.remove-size-btn').forEach(btn => btn.addEventListener('click', (e) => e.target.closest('.size-group').remove()));
-    sizesContainer.querySelectorAll('.add-rate-btn').forEach(btn => btn.addEventListener('click', (e) => addPricingRateRow(e.target.previousElementSibling)));
-    sizesContainer.querySelectorAll('.quill-editor-container').forEach(editorDiv => {
-        const editorId = editorDiv.id;
-        quillInstances[editorId] = new Quill(editorDiv, { theme: 'snow', placeholder: 'Size description...' });
-        quillInstances[editorId].root.innerHTML = editorDiv.dataset.initialValue || '';
-    });
-}
-
-function addSizeGroupHtml(size = {}) {
-    const editorId = `size-desc-${Date.now()}-${Math.random()}`;
-    const ratesHtml = (size.rates || []).map(rate => addPricingRateRowHtml(rate)).join('');
-    return `
-        <div class="size-group border p-3 rounded-md bg-white">
-            <div class="flex justify-between items-center mb-2">
-                <input type="text" class="size-name input-field" placeholder="Size Name" value="${size.name || ''}">
-                <button type="button" class="remove-size-btn text-red-600"><i class="fas fa-trash-alt"></i></button>
-            </div>
-            <div id="${editorId}" class="quill-editor-container" data-initial-value="${size.description || ''}"></div>
-            <div class="mt-2"><label class="form-label-sm">Capacity</label>
-                <input type="number" class="size-capacity input-field" placeholder="Units" value="${size.capacity || ''}">
-            </div>
-            <div class="mt-2">
-                <h6 class="font-semibold text-xs">Rates:</h6>
-                <div class="rates-list space-y-2 mt-1">${ratesHtml}</div>
-                <button type="button" class="add-rate-btn text-xs font-semibold text-blue-600 mt-2"><i class="fas fa-plus mr-1"></i>Add Rate</button>
-            </div>
-        </div>`;
-}
-
-function addPricingRateRowHtml(rate = {}) {
-    return `
-        <div class="rate-row grid grid-cols-3 gap-2 items-center">
-            <input type="text" class="rate-duration input-field text-sm p-2" placeholder="Duration" value="${rate.duration || ''}">
-            <input type="number" class="rate-price input-field text-sm p-2" placeholder="Price" value="${rate.price || ''}">
-            <button type="button" class="remove-rate-btn text-red-600" onclick="this.closest('.rate-row').remove()"><i class="fas fa-times-circle"></i></button>
-        </div>`;
-}
-
-function addSizeGroup(container) {
-    const newHtml = addSizeGroupHtml();
-    container.insertAdjacentHTML('beforeend', newHtml);
-    const newSizeGroup = container.lastElementChild;
-    const editorId = newSizeGroup.querySelector('.quill-editor-container').id;
-    quillInstances[editorId] = new Quill(`#${editorId}`, { theme: 'snow', placeholder: 'Size description...' });
-    newSizeGroup.querySelector('.remove-size-btn').addEventListener('click', (e) => e.target.closest('.size-group').remove());
-    newSizeGroup.querySelector('.add-rate-btn').addEventListener('click', (e) => addPricingRateRow(e.target.previousElementSibling));
-}
-
-function addPricingRateRow(container) {
-    container.insertAdjacentHTML('beforeend', addPricingRateRowHtml());
-}
-
-let currentIconButton = null;
 window.openIconPicker = function(button) {
     currentIconButton = button;
     const modal = document.getElementById('icon-picker-modal');
     const grid = document.getElementById('icon-picker-grid');
     const search = document.getElementById('icon-picker-search');
-
     const renderIcons = (filter = '') => {
         grid.innerHTML = faIcons
             .filter(i => i.toLowerCase().includes(filter.toLowerCase()))
             .map(icon => `<div class="p-2 text-center text-xl cursor-pointer hover:bg-gray-200 rounded" data-icon="${icon}"><i class="${icon}"></i></div>`)
             .join('');
-
         grid.querySelectorAll('[data-icon]').forEach(el => {
             el.addEventListener('click', (e) => {
                 if (currentIconButton) {
@@ -452,206 +569,184 @@ window.openIconPicker = function(button) {
             });
         });
     };
-
     search.oninput = () => renderIcons(search.value);
     document.getElementById('icon-picker-close-btn').onclick = () => modal.classList.remove('visible');
-
     renderIcons();
     modal.classList.add('visible');
 };
 
-async function openEditStorageTypeModal(id, type) {
-    const { uploadImage } = await import('./uploader.js');
-    let selectedTypeImageFile = null;
-
-    const { value: formValues } = await Swal.fire({
-        title: `Edit: ${type.name}`,
-        html: `
-            <div class="text-left space-y-3">
-                <div>
-                    <label for="swal-edit-type-name" class="form-label">Type Name</label>
-                    <input id="swal-edit-type-name" class="swal2-input" value="${type.name || ''}">
-                </div>
-                <div>
-                    <label for="swal-edit-type-desc" class="form-label">Description</label>
-                    <textarea id="swal-edit-type-desc" class="swal2-textarea">${type.description || ''}</textarea>
-                </div>
-                <div>
-                    <label for="swal-edit-type-image-upload" class="form-label">Change Image</label>
-                    <input id="swal-edit-type-image-upload" type="file" class="swal2-file" accept="image/*">
-                    <img id="swal-edit-type-image-preview" src="${type.image || 'https://placehold.co/100x100/e2e8f0/64748b?text=Img'}" class="mt-2 w-24 h-24 object-cover rounded-md mx-auto"/>
-                </div>
-            </div>
-        `,
-        showCancelButton: true,
-        confirmButtonText: 'Save Changes',
-        didOpen: () => {
-            const imageInput = document.getElementById('swal-edit-type-image-upload');
-            const imagePreview = document.getElementById('swal-edit-type-image-preview');
-            imageInput.addEventListener('change', (e) => {
-                if (e.target.files && e.target.files[0]) {
-                    selectedTypeImageFile = e.target.files[0];
-                    const reader = new FileReader();
-                    reader.onload = (re) => { imagePreview.src = re.target.result; };
-                    reader.readAsDataURL(selectedTypeImageFile);
-                }
-            });
-        },
-        preConfirm: async () => {
-            const name = document.getElementById('swal-edit-type-name').value;
-            if (!name) {
-                Swal.showValidationMessage('Type name is required.');
-                return false;
-            }
-
-            let imageUrl = type.image || '';
-            if (selectedTypeImageFile) {
-                Swal.showLoading();
-                try {
-                    imageUrl = await uploadImage(selectedTypeImageFile);
-                } catch (error) {
-                    Swal.showValidationMessage(`Image Upload Failed: ${error.message}`);
-                    return false;
-                }
-            }
-            return {
-                name,
-                description: document.getElementById('swal-edit-type-desc').value,
-                image: imageUrl
-            };
-        }
-    });
-
-    if (formValues) {
-        db.ref(`settings/storageTypes/${id}`).update(formValues)
-            .then(() => Swal.fire('Success!', 'Storage type updated.', 'success'))
-            .catch(err => Swal.fire('Error', err.message, 'error'));
-    }
-}
-
 window.openManageStorageTypesModal = async function() {
     const { uploadImage } = await import('./uploader.js');
-    let selectedTypeImageFile = null;
 
-    const renderTypeList = () => {
-        if (!window.allStorageTypes || Object.keys(window.allStorageTypes).length === 0) {
-            return '<p class="text-center text-gray-500 my-4">No storage types defined.</p>';
-        }
-        return Object.entries(window.allStorageTypes).map(([id, type]) => `
-            <div class="storage-type-item flex justify-between items-center p-3 border-b" data-id="${id}">
-                <div class="flex items-center gap-4">
-                    <img src="${type.image || 'https://placehold.co/60x60/e2e8f0/64748b?text=Img'}" class="w-16 h-16 object-cover rounded-md">
+    const renderTabContent = (id, type = { name: '', description: '', image: '' }) => {
+        const isNew = !id;
+        const title = isNew ? 'Add New Storage Type' : `Edit: ${type.name}`;
+        const buttonText = isNew ? 'Create & Save' : 'Save Changes';
+        const deleteButtonHtml = isNew ? '' : '<button type="button" id="delete-storage-type-btn" class="btn btn-danger">Delete</button>';
+
+        return `
+            <div class="storage-type-content active" data-id="${id || 'new'}">
+                <h3 class="font-bold text-xl mb-4">${title}</h3>
+                <form class="storage-type-form space-y-4">
                     <div>
-                        <p class="font-bold text-gray-800">${type.name}</p>
-                        <p class="text-xs text-gray-500">${type.description || ''}</p>
+                        <label class="form-label">Type Name</label>
+                        <input type="text" class="input-field type-name" placeholder="e.g., Small Box" value="${type.name || ''}">
                     </div>
-                </div>
-                <div class="flex gap-2">
-                    <button class="text-blue-600 hover:text-blue-900 edit-type-btn"><i class="fas fa-edit"></i></button>
-                    <button class="text-red-600 hover:text-red-900 delete-type-btn"><i class="fas fa-trash"></i></button>
-                </div>
+                    <div>
+                        <label class="form-label">Description</label>
+                        <textarea class="textarea-field type-description" placeholder="Brief description">${type.description || ''}</textarea>
+                    </div>
+                    <div>
+                        <label class="form-label">Image</label>
+                        <div class="storage-type-image-preview">
+                            <img src="${type.image || ''}" class="${type.image ? '' : 'hidden'}">
+                            <i class="fas fa-image placeholder-icon ${type.image ? 'hidden' : ''}"></i>
+                        </div>
+                        <input type="file" class="type-image-input hidden" accept="image/*">
+                    </div>
+                    <div class="storage-type-actions">
+                        ${deleteButtonHtml}
+                        <button type="button" class="btn btn-primary ml-auto save-storage-type-btn">${buttonText}</button>
+                    </div>
+                </form>
             </div>
-        `).join('');
+        `;
     };
 
-    const { value: formValues } = await Swal.fire({
-        title: 'Manage Storage Types',
+    const renderAllTabs = () => {
+        let tabsHtml = '';
+        if (window.allStorageTypes && Object.keys(window.allStorageTypes).length > 0) {
+            tabsHtml = Object.entries(window.allStorageTypes).map(([id, type]) =>
+                `<button type="button" class="storage-type-tab-item" data-id="${id}">${type.name}</button>`
+            ).join('');
+        }
+        return tabsHtml + '<button type="button" class="storage-type-tab-item add-new" data-id="new"><i class="fas fa-plus mr-2"></i>Add New Type</button>';
+    };
+
+    await Swal.fire({
         html: `
-            <div id="storage-types-list" class="max-h-96 overflow-y-auto mb-4">${renderTypeList()}</div>
-            <h3 class="font-bold text-lg border-t pt-4">Add New Type</h3>
-            <div class="text-left space-y-3 mt-2">
-                <div>
-                    <label for="swal-type-name" class="form-label">Type Name</label>
-                    <input id="swal-type-name" class="swal2-input" placeholder="e.g., Small Box">
-                </div>
-                <div>
-                    <label for="swal-type-desc" class="form-label">Description</label>
-                    <textarea id="swal-type-desc" class="swal2-textarea" placeholder="Brief description"></textarea>
-                </div>
-                 <div>
-                    <label for="swal-type-image-upload" class="form-label">Image</label>
-                    <input id="swal-type-image-upload" type="file" class="swal2-file" accept="image/*">
-                    <img id="swal-type-image-preview" src="#" class="hidden mt-2 w-24 h-24 object-cover rounded-md mx-auto"/>
+            <div class="manage-storage-modal-container">
+                <div class="manage-storage-modal-header">Manage Storage Types</div>
+                <div class="manage-storage-modal-body">
+                    <div class="storage-type-sidebar">${renderAllTabs()}</div>
+                    <div class="storage-type-content-panel"></div>
                 </div>
             </div>
         `,
-        width: '700px',
-        showCancelButton: true,
-        confirmButtonText: 'Add New Type',
+        customClass: { popup: 'manage-storage-types-modal' },
+        showConfirmButton: false,
+        showCancelButton: false,
         didOpen: () => {
-            const imageInput = document.getElementById('swal-type-image-upload');
-            const imagePreview = document.getElementById('swal-type-image-preview');
-            imageInput.addEventListener('change', (e) => {
-                if (e.target.files && e.target.files[0]) {
-                    selectedTypeImageFile = e.target.files[0];
-                    const reader = new FileReader();
-                    reader.onload = (re) => {
-                        imagePreview.src = re.target.result;
-                        imagePreview.classList.remove('hidden');
-                    };
-                    reader.readAsDataURL(selectedTypeImageFile);
-                }
-            });
+            const sidebar = Swal.getPopup().querySelector('.storage-type-sidebar');
+            const contentPanel = Swal.getPopup().querySelector('.storage-type-content-panel');
+            let currentFile = null;
 
-            document.querySelectorAll('.edit-type-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const id = e.currentTarget.closest('.storage-type-item').dataset.id;
-                    const type = window.allStorageTypes[id];
-                    Swal.close();
-                    openEditStorageTypeModal(id, type);
+            const activateTab = (tabEl) => {
+                if (!tabEl) return;
+                
+                sidebar.querySelectorAll('.storage-type-tab-item.active').forEach(t => t.classList.remove('active'));
+                tabEl.classList.add('active');
+
+                const id = tabEl.dataset.id;
+                const typeData = id === 'new' ? undefined : window.allStorageTypes[id];
+                contentPanel.innerHTML = renderTabContent(id === 'new' ? null : id, typeData);
+                
+                const currentContent = contentPanel.querySelector('.storage-type-content');
+                currentFile = null;
+
+                currentContent.querySelector('.storage-type-image-preview').addEventListener('click', (e) => {
+                    e.currentTarget.nextElementSibling.click();
                 });
-            });
+                
+                currentContent.querySelector('.type-image-input').addEventListener('change', (e) => {
+                    if (e.target.files && e.target.files[0]) {
+                        currentFile = e.target.files[0];
+                        const reader = new FileReader();
+                        reader.onload = (re) => {
+                            const previewImg = currentContent.querySelector('.storage-type-image-preview img');
+                            previewImg.src = re.target.result;
+                            previewImg.classList.remove('hidden');
+                            currentContent.querySelector('.storage-type-image-preview .placeholder-icon').classList.add('hidden');
+                        };
+                        reader.readAsDataURL(currentFile);
+                    }
+                });
 
-            document.querySelectorAll('.delete-type-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const id = e.currentTarget.closest('.storage-type-item').dataset.id;
-                    Swal.fire({
-                        title: 'Are you sure?',
-                        text: "You won't be able to revert this!",
-                        icon: 'warning',
-                        showCancelButton: true,
-                        confirmButtonColor: '#d33',
-                        confirmButtonText: 'Yes, delete it!'
-                    }).then((result) => {
-                        if (result.isConfirmed) {
-                            db.ref(`settings/storageTypes/${id}`).remove()
-                                .then(() => {
-                                    Swal.fire('Deleted!', 'The storage type has been deleted.', 'success');
-                                    document.getElementById('storage-types-list').innerHTML = renderTypeList();
-                                })
-                                .catch(err => Swal.fire('Error', err.message, 'error'));
+                currentContent.querySelector('.save-storage-type-btn').addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    const name = currentContent.querySelector('.type-name').value;
+                    const description = currentContent.querySelector('.type-description').value;
+
+                    if (!name) {
+                        Swal.showValidationMessage('Type name is required.');
+                        return;
+                    }
+                    
+                    Swal.fire({ title: 'Saving...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+                    let imageUrl = currentContent.querySelector('.storage-type-image-preview img').src;
+                    if (currentFile) {
+                        try {
+                            imageUrl = await uploadImage(currentFile);
+                        } catch (error) {
+                            return Swal.fire('Error', `Image upload failed: ${error.message}`, 'error');
                         }
+                    }
+
+                    const data = { name, description, image: imageUrl };
+                    const ref = id === 'new' ? db.ref('settings/storageTypes').push() : db.ref(`settings/storageTypes/${id}`);
+                    
+                    await ref.set(data);
+                    
+                    await db.ref('settings/storageTypes').once('value', snapshot => {
+                        window.allStorageTypes = snapshot.val() || {};
+                        sidebar.innerHTML = renderAllTabs();
+                        const newActiveTabId = id === 'new' ? ref.key : id;
+                        const newActiveTab = sidebar.querySelector(`.storage-type-tab-item[data-id="${newActiveTabId}"]`);
+                        
+                        if (newActiveTab) {
+                            activateTab(newActiveTab);
+                        }
+                        
+                        Swal.fire('Success', 'Storage type saved!', 'success');
                     });
                 });
-            });
-        },
-        preConfirm: async () => {
-            const name = document.getElementById('swal-type-name').value;
-            const description = document.getElementById('swal-type-desc').value;
-            if (!name) {
-                Swal.showValidationMessage('Type name is required.');
-                return false;
-            }
-
-            let imageUrl = '';
-            if (selectedTypeImageFile) {
-                Swal.showLoading();
-                try {
-                    imageUrl = await uploadImage(selectedTypeImageFile);
-                } catch (error) {
-                    Swal.showValidationMessage(`Image Upload Failed: ${error.message}`);
-                    return false;
+                
+                const deleteBtn = currentContent.querySelector('#delete-storage-type-btn');
+                if (deleteBtn) {
+                    deleteBtn.addEventListener('click', () => {
+                         Swal.fire({
+                            title: 'Are you sure?',
+                            text: "This will permanently delete this storage type.",
+                            icon: 'warning',
+                            showCancelButton: true,
+                            confirmButtonColor: '#d33',
+                            confirmButtonText: 'Yes, delete it!'
+                        }).then(async (result) => {
+                            if (result.isConfirmed) {
+                                await db.ref(`settings/storageTypes/${id}`).remove();
+                                await db.ref('settings/storageTypes').once('value', snapshot => {
+                                    window.allStorageTypes = snapshot.val() || {};
+                                    sidebar.innerHTML = renderAllTabs();
+                                    const firstTab = sidebar.querySelector('.storage-type-tab-item:not(.add-new)');
+                                    activateTab(firstTab || sidebar.querySelector('.add-new'));
+                                    Swal.fire('Deleted!', 'The storage type has been deleted.', 'success');
+                                });
+                            }
+                        });
+                    });
                 }
-            }
-            return { name, description, image: imageUrl };
+            };
+            
+            sidebar.addEventListener('click', (e) => {
+                const tabItem = e.target.closest('.storage-type-tab-item');
+                if(tabItem) {
+                    activateTab(tabItem);
+                }
+            });
+
+            const firstTab = sidebar.querySelector('.storage-type-tab-item:not(.add-new)');
+            activateTab(firstTab || sidebar.querySelector('.add-new'));
         }
     });
-
-    if (formValues) {
-        const { name, description, image } = formValues;
-        const newTypeRef = db.ref('settings/storageTypes').push();
-        newTypeRef.set({ name, description, image })
-            .then(() => Swal.fire('Success!', 'New storage type added.', 'success'))
-            .catch(err => Swal.fire('Error', err.message, 'error'));
-    }
-}
+};

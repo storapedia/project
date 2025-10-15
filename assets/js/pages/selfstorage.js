@@ -28,7 +28,7 @@ async function renderSelfStorageLocations() {
 
         // Filter locations that offer the "Self Storage" category
         const filteredLocations = allLocations.filter(loc =>
-            loc.categories && loc.categories.some(cat => cat.name === 'Self Storage')
+            loc.categories && loc.categories.some(cat => cat.name.trim() === 'Self Storage')
         );
 
         if (filteredLocations.length === 0) {

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'S-9993scs';
+const CACHE_NAME = 'V232';
 const urlsToCache = [
   '/',
   '/index.html',

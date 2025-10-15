@@ -1,57 +1,118 @@
 import { getStarRatingHTML } from '../ui/components.js';
-import { debounce, showLoader } from '../ui/ui-helpers.js';
+import { debounce, showLoader, showToast } from '../ui/ui-helpers.js';
 import { renderLocationDetailModal } from '../ui/modals.js';
 import { publicDataCache } from '../main.js';
 
 let map;
 let markers = [];
+let userMarker = null;
+let drawnLines = [];
 let allLocationsData = [];
-let infoWindow;
+let detailPopup = null;
 
-// Fungsi untuk menampilkan detail lokasi di sidebar
-function showLocationDetailInSidebar(locationId) {
-    const sidebar = document.getElementById('map-sidebar');
-    const locationData = allLocationsData.find(loc => loc.id === locationId);
-    if (!locationData) return;
+/**
+ * Menghitung jarak antara dua koordinat geografis.
+ * @param {object} coords1 - Koordinat pertama {lat, lng}.
+ * @param {object} coords2 - Koordinat kedua {latitude, longitude}.
+ * @returns {number} Jarak dalam kilometer.
+ */
+function getDistance(coords1, coords2) {
+    if (!coords1 || !coords2) return Infinity;
+    const R = 6371; // Radius bumi dalam km
+    const dLat = (coords2.latitude - coords1.lat) * Math.PI / 180;
+    const dLon = (coords2.longitude - coords1.lng) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(coords1.lat * Math.PI / 180) * Math.cos(coords2.latitude * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
 
-    const reviews = Object.values(publicDataCache.reviews[locationData.id] || {});
-    const avgRating = reviews.length > 0 ? (reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length) : 0;
+/**
+ * Menampilkan atau menyembunyikan popup detail lokasi di bagian bawah layar.
+ * @param {object|null} locationData - Data lokasi untuk ditampilkan, atau null untuk menyembunyikan.
+ */
+function toggleDetailPopup(locationData) {
+    const parentContainer = document.getElementById('map-page-wrapper') || document.body;
+    if (!detailPopup) {
+        detailPopup = document.createElement('div');
+        detailPopup.id = 'map-detail-popup';
+        parentContainer.appendChild(detailPopup);
+    }
+
+    // === PERBAIKAN UTAMA ADA DI SINI ===
+    Object.assign(detailPopup.style, {
+        position: 'fixed', // Diubah menjadi 'fixed' agar selalu relatif terhadap layar
+        bottom: '-200px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: 'calc(100% - 2rem)', // Lebar responsif
+        maxWidth: '450px',
+        backgroundColor: 'white',
+        borderRadius: '12px',
+        boxShadow: '0 -4px 15px rgba(0,0,0,0.1)',
+        padding: '1rem',
+        zIndex: '1001', // Dinaikkan agar di atas footer mobile (z-index: 1000)
+        transition: 'bottom 0.3s ease-in-out',
+        display: 'flex',
+        gap: '1rem',
+        alignItems: 'center'
+    });
     
-    const detailHTML = `
-        <div class="sidebar-detail-view" style="display: flex; flex-direction: column; height: 100%;">
-            <div class="detail-header" style="padding: 1rem; border-bottom: 1px solid #EAEBF0;">
-                <button id="back-to-list-btn" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back</button>
+    if (locationData) {
+        const reviews = Object.values(publicDataCache.reviews[locationData.id] || {});
+        const avgRating = reviews.length > 0 ? (reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length) : 0;
+        
+        detailPopup.innerHTML = `
+            <img src="${locationData.imageUrl || 'https://placehold.co/100x70'}" alt="${locationData.name}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 8px; flex-shrink: 0;">
+            <div style="flex-grow: 1; min-width: 0;">
+                <h5 style="margin: 0 0 0.25rem; font-size: 1rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${locationData.name}</h5>
+                <div style="font-size: 0.8rem; margin-bottom: 0.5rem;">${getStarRatingHTML(avgRating)}</div>
+                <button class="btn btn-primary" onclick="window.viewLocationFromMap('${locationData.id}')" style="padding: 0.5rem 1rem; font-size: 0.8rem; border-radius: 50px;">Book Now</button>
             </div>
-            <div class="detail-content" style="overflow-y: auto; padding: 1rem;">
-                <img src="${locationData.imageUrl || 'https://placehold.co/300x200'}" alt="${locationData.name}" style="width: 100%; border-radius: 12px;">
-                <h3 style="margin: 1rem 0 0.5rem;">${locationData.name}</h3>
-                <div style="margin-bottom: 1rem;">${getStarRatingHTML(avgRating)}</div>
-                <p>${locationData.address || 'N/A'}</p>
-                <button class="btn btn-primary btn-full" style="margin-top: 1.5rem;" onclick="window.viewLocationFromMap('${locationData.id}')">Book Now</button>
-            </div>
-        </div>`;
-    sidebar.innerHTML = detailHTML;
-    document.getElementById('back-to-list-btn').addEventListener('click', () => {
-        // Render ulang sidebar ke tampilan daftar
-        const page = document.getElementById('map-page-wrapper');
-        page.innerHTML = Map.sidebarHTML + page.querySelector('#map-container').outerHTML;
-        setupEventListeners();
-        populateFilterButtons();
-        updateListingsAndMarkers();
+            <button onclick="document.getElementById('map-detail-popup').style.bottom = '-200px';" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #999; position: absolute; top: 0.5rem; right: 0.5rem; line-height: 1;">&times;</button>
+        `;
+        
+        // Atur posisi 'bottom' berdasarkan ukuran layar
+        const isMobile = window.innerWidth < 1024;
+        const bottomPosition = isMobile ? 'calc(60px + 1rem)' : '1.5rem'; // 60px adalah tinggi footer
+        
+        setTimeout(() => detailPopup.style.bottom = bottomPosition, 50);
+    } else {
+        detailPopup.style.bottom = '-200px';
+    }
+}
+
+/**
+ * Menggambar garis dari lokasi pengguna ke 3 lokasi terdekat.
+ * @param {object} userCoords - Koordinat pengguna {lat, lng}.
+ */
+function drawLinesToNearest(userCoords) {
+    drawnLines.forEach(line => line.setMap(null));
+    drawnLines = [];
+
+    if (!userCoords) return;
+
+    const sortedLocations = allLocationsData
+        .map(loc => ({ ...loc, distance: getDistance(userCoords, loc.geolocation) }))
+        .sort((a, b) => a.distance - b.distance);
+
+    sortedLocations.slice(0, 3).forEach(loc => {
+        if (loc.geolocation) {
+            const line = new google.maps.Polyline({
+                path: [userCoords, { lat: loc.geolocation.latitude, lng: loc.geolocation.longitude }],
+                geodesic: true,
+                strokeColor: '#007AFF',
+                strokeOpacity: 0.7,
+                strokeWeight: 2.5,
+                map: map
+            });
+            drawnLines.push(line);
+        }
     });
 }
 
-// Fungsi untuk mempopulasikan tombol filter
-function populateFilterButtons() {
-    const filtersContainer = document.getElementById('map-filters');
-    if (!filtersContainer) return;
-    const categories = new Set(['All', ...allLocationsData.flatMap(loc => (loc.categories || []).map(cat => cat.name))]);
-    filtersContainer.innerHTML = Array.from(categories).map(category => 
-        `<button class="btn btn-secondary filter-btn ${category === 'All' ? 'active' : ''}" data-category="${category}">${category}</button>`
-    ).join('');
-}
-
-// Inisialisasi peta
+/**
+ * Inisialisasi peta dan semua komponennya.
+ */
 async function initMap() {
     if (typeof google === 'undefined' || typeof google.maps === 'undefined') {
         console.error("Google Maps script is not loaded.");
@@ -67,22 +128,21 @@ async function initMap() {
         zoomControl: true,
     });
     mapElement.classList.add('map-initialized');
-    infoWindow = new google.maps.InfoWindow();
     
     allLocationsData = Object.keys(publicDataCache.locations).map(id => ({ id, ...publicDataCache.locations[id] }));
 
-    populateFilterButtons();
     setupEventListeners();
     updateListingsAndMarkers();
 }
 
-// Event listeners untuk kontrol peta
+/**
+ * Menyiapkan semua event listener untuk interaksi peta.
+ */
 function setupEventListeners() {
     const searchInput = document.getElementById('map-search-input');
     const findMeBtn = document.getElementById('find-me-btn');
-    const filtersContainer = document.getElementById('map-filters');
 
-    if(searchInput) {
+    if (searchInput) {
         const autocomplete = new google.maps.places.Autocomplete(searchInput);
         autocomplete.addListener('place_changed', () => {
             const place = autocomplete.getPlace();
@@ -93,89 +153,69 @@ function setupEventListeners() {
         });
     }
 
-    if(findMeBtn) findMeBtn.addEventListener('click', () => {
-        if(navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(pos => map.setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude }));
-        }
-    });
-    
-    if(filtersContainer) {
-        filtersContainer.addEventListener('click', e => {
-            if(e.target.classList.contains('filter-btn')) {
-                filtersContainer.querySelector('.active')?.classList.remove('active');
-                e.target.classList.add('active');
-                updateListingsAndMarkers();
+    if (findMeBtn) {
+        findMeBtn.addEventListener('click', () => {
+            if (navigator.geolocation) {
+                showLoader(true, "Finding your location...");
+                navigator.geolocation.getCurrentPosition(pos => {
+                    showLoader(false);
+                    const userCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                    map.setCenter(userCoords);
+                    map.setZoom(14);
+
+                    if (userMarker) userMarker.setMap(null);
+
+                    userMarker = new google.maps.Marker({
+                        position: userCoords,
+                        map: map,
+                        title: "Your Location",
+                        animation: google.maps.Animation.BOUNCE,
+                    });
+                    
+                    drawLinesToNearest(userCoords);
+                }, () => {
+                    showLoader(false);
+                    showToast("Could not get your location.", "error");
+                });
             }
         });
     }
     
     map.addListener('idle', debounce(updateListingsAndMarkers, 300));
+    map.addListener('click', () => toggleDetailPopup(null));
 }
 
-// assets/js/pages/map.js
-
+/**
+ * Memperbarui penanda di peta berdasarkan area yang terlihat.
+ */
 function updateListingsAndMarkers() {
-    // Perbaikan: Pastikan map dan bounds sudah siap
-    if (!map || !map.getBounds()) {
-        console.warn("Map or map bounds not ready yet. Skipping update.");
-        return;
-    }
+    if (!map || !map.getBounds()) return;
 
     const bounds = map.getBounds();
-    const listingsContainer = document.getElementById('map-listings');
-    const selectedCategory = document.querySelector('#map-filters .filter-btn.active')?.dataset.category || 'All';
-
-    // Hapus marker yang lama
     markers.forEach(marker => marker.setMap(null));
     markers = [];
-    listingsContainer.innerHTML = '';
     
-    let locationsInViewCount = 0;
     allLocationsData.forEach(loc => {
         const position = loc.geolocation ? { lat: loc.geolocation.latitude, lng: loc.geolocation.longitude } : null;
+        if (!position || !bounds.contains(position)) return;
         
-        // Perbaikan: Cek apakah lokasi ada di dalam bounds
-        if (!position || !bounds.contains(position)) {
-            return;
-        }
-        
-        const categoryMatch = selectedCategory === 'All' || loc.categories?.some(cat => cat.name === selectedCategory);
-        if (!categoryMatch) return;
-        
-        locationsInViewCount++;
         const marker = new google.maps.Marker({
             position,
             map: map,
             title: loc.name,
-            icon: '/assets/img/maps.png' // Pastikan path icon benar
-        });
-        
-        marker.addListener('click', () => {
-            if (infoWindow) {
-                infoWindow.setContent(`<strong>${loc.name}</strong>`);
-                infoWindow.open(map, marker);
-                map.panTo(marker.getPosition());
+            icon: {
+                url: '/assets/img/maps.png',
+                scaledSize: new google.maps.Size(32, 32),
             }
         });
-        markers.push(marker);
-
-        const avgRating = Object.values(publicDataCache.reviews[loc.id] || {}).reduce((acc, r, _, arr) => acc + r.rating / arr.length, 0);
         
-        const listingItem = document.createElement('div');
-        listingItem.className = 'listing-item';
-        listingItem.innerHTML = `
-            <img src="${loc.imageUrl || 'https://placehold.co/100x70'}" alt="${loc.name}">
-            <div>
-                <h5 class="listing-title">${loc.name}</h5>
-                <div class="listing-rating">${getStarRatingHTML(avgRating)}</div>
-            </div>`;
-        listingItem.addEventListener('click', () => showLocationDetailInSidebar(loc.id));
-        listingsContainer.appendChild(listingItem);
+        marker.addListener('click', (e) => {
+            e.domEvent.stopPropagation(); // Mencegah event 'click' peta saat marker diklik
+            toggleDetailPopup(loc);
+            map.panTo(marker.getPosition());
+        });
+        markers.push(marker);
     });
-
-    if (locationsInViewCount === 0) {
-        listingsContainer.innerHTML = '<div class="no-results">No locations found in this area.</div>';
-    }
 }
 
 // Fungsi global untuk membuka modal dari peta
@@ -184,37 +224,33 @@ window.viewLocationFromMap = (locationId) => {
     if (locationData) renderLocationDetailModal(locationData, publicDataCache.reviews);
 };
 
-// Object Map utama
+// Objek utama untuk halaman Peta
 const Map = {
-    sidebarHTML: `
-        <div id="map-sidebar" style="width: 350px; background: #FFFFFF; border-right: 1px solid #EAEBF0; display: flex; flex-direction: column; flex-shrink: 0;">
-            <div class="map-controls" style="padding: 1rem; border-bottom: 1px solid #EAEBF0;">
-                <input type="text" id="map-search-input" placeholder="Search address or place..." style="width: 100%; margin-bottom: 1rem;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div id="map-filters" style="display: flex; gap: 0.5rem; overflow-x: auto;"></div>
-                    <button id="find-me-btn" title="My Location" class="btn btn-secondary"><i class="fas fa-crosshairs"></i></button>
-                </div>
-            </div>
-            <div id="map-listings" style="overflow-y: auto; flex-grow: 1;"></div>
-        </div>`,
     render: async () => `
-        <div id="map-page-wrapper" style="display: flex; height: 100vh; width: 100%; position: absolute; top: 0; left: 0;">
-            ${Map.sidebarHTML}
-            <div id="map-container" style="flex-grow: 1; height: 100%;"></div>
+        <div id="map-page-wrapper" style="display: flex; height: 100vh; width: 100%; position: absolute; top: 0; left: 0; font-family: 'Montserrat', sans-serif;">
+            <div id="map-container" style="flex-grow: 1; height: 100%; position: relative; overflow: hidden;"></div>
+            <div class="map-controls" style="position: absolute; top: 1rem; left: 1rem; right: 1rem; z-index: 10; display: flex; gap: 0.5rem; max-width: 500px; margin: auto;">
+                <input type="text" id="map-search-input" placeholder="Search address or place..." style="flex-grow: 1; border: none; border-radius: 50px; padding: 12px 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); font-size: 1rem;">
+                <button id="find-me-btn" title="My Location" style="flex-shrink: 0; width: 48px; height: 48px; border-radius: 50%; border: none; background: white; cursor: pointer; font-size: 1.2rem; color: #555; box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: center;">
+                    <i class="fas fa-crosshairs"></i>
+                </button>
+            </div>
         </div>
         <style>
-            @media (max-width: 768px) {
-                #map-page-wrapper { flex-direction: column; }
-                #map-sidebar { width: 100% !important; height: 45%; max-height: 45vh; border-right: none; border-bottom: 1px solid #EAEBF0; }
-                #map-container { height: 55%; }
+            .pac-container { z-index: 9999 !important; }
+            #map-detail-popup .btn {
+                display: inline-flex; align-items: center; justify-content: center;
+                padding: 0.5rem 1rem; border-radius: 9999px; font-size: 0.8rem;
+                font-weight: 600; cursor: pointer; border: 1px solid transparent;
+                text-decoration: none; user-select: none;
+                background-color: #00BEFC; color: white;
             }
+            #map-detail-popup .btn:hover { background-color: #00A9E0; }
         </style>
     `,
     afterRender: async () => {
         if (typeof google === 'undefined' || typeof google.maps === 'undefined') {
             showToast("Loading Google Maps, please wait...", "info");
-            // Maps akan diinisialisasi oleh script di index.html
-            // Kita hanya perlu menunggu
             const checkGoogle = setInterval(() => {
                 if (typeof google !== 'undefined' && google.maps) {
                     clearInterval(checkGoogle);

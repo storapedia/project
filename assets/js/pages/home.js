@@ -10,7 +10,6 @@ let state = {
     allReviews: {},
     userLocation: null,
     filters: {
-        sortBy: 'nearest',
         searchQuery: ''
     }
 };
@@ -84,14 +83,8 @@ async function renderLocations() {
     });
 
     locationsArray.sort((a, b) => {
-        if (state.filters.sortBy === 'nearest') {
+        if (state.userLocation) {
             return (a.distance ?? Infinity) - (b.distance ?? Infinity);
-        }
-        if (state.filters.sortBy === 'cheapest') {
-            return getCheapestPrice(a).price - getCheapestPrice(b).price;
-        }
-        if (state.filters.sortBy === 'top_rated') {
-            return b.averageRating - a.averageRating;
         }
         return 0;
     });
@@ -192,34 +185,42 @@ function addEventListeners() {
                 return;
             }
         }
-
-        const sortByTab = e.target.closest('.filter-sort-tab');
-        if (sortByTab) {
-            state.filters.sortBy = sortByTab.dataset.sortBy;
-            document.querySelectorAll('.filter-sort-tab').forEach(tab => tab.classList.remove('active'));
-            sortByTab.classList.add('active');
-            renderLocations();
-            return;
-        }
     });
 
     const searchInput = document.getElementById('search-input');
-    if (searchInput) {
-        searchInput.addEventListener('input', debounce(() => {
-            state.filters.searchQuery = searchInput.value;
-            renderLocations();
-        }, 300));
+    const detectLocationBtn = document.getElementById('detect-location-btn');
+    
+    if (searchInput && typeof google !== 'undefined' && google.maps) {
+        const autocomplete = new google.maps.places.Autocomplete(searchInput);
+        autocomplete.addListener('place_changed', () => {
+            const place = autocomplete.getPlace();
+            if (place.geometry && place.geometry.location) {
+                state.userLocation = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() };
+                state.filters.searchQuery = place.name;
+                renderLocations();
+            }
+        });
     }
 
-    const detectLocationBtn = document.getElementById('detect-location-btn');
     if (detectLocationBtn) {
         detectLocationBtn.addEventListener('click', () => {
             if (navigator.geolocation) {
                 showLoader(true, 'Detecting your location...');
                 navigator.geolocation.getCurrentPosition(pos => {
-                    state.userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                    renderLocations();
-                    showLoader(false);
+                    const lat = pos.coords.latitude;
+                    const lng = pos.coords.longitude;
+                    const geocoder = new google.maps.Geocoder();
+                    geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+                        showLoader(false);
+                        if (status === 'OK' && results[0]) {
+                            state.userLocation = { lat, lng };
+                            state.filters.searchQuery = results[0].formatted_address;
+                            searchInput.value = results[0].formatted_address;
+                            renderLocations();
+                        } else {
+                            showToast('Could not find address for your location.', 'error');
+                        }
+                    });
                 }, () => {
                     showToast('Could not detect location.', 'error');
                     showLoader(false);
@@ -235,22 +236,22 @@ export default {
     render: async () => `
         <style>
             .app-menu-grid {
-                grid-template-columns: repeat(3, 1fr); /* Default 3 kolom */
-                gap: 1.5rem; /* Jarak antar item */
+                grid-template-columns: repeat(3, 1fr);
+                gap: 1.5rem;
             }
             .app-menu-item:nth-child(4) {
-                grid-column: 1 / 2; /* Item ke-4 mulai dari kolom 1 */
+                grid-column: 1 / 2;
             }
             .app-menu-item:nth-child(5) {
-                grid-column: 3 / 4; /* Item ke-5 mulai dari kolom 3 */
+                grid-column: 3 / 4;
             }
             @media (min-width: 768px) {
                 .app-menu-grid {
-                    grid-template-columns: repeat(5, 1fr); /* 5 kolom di desktop */
+                    grid-template-columns: repeat(5, 1fr);
                 }
                 .app-menu-item:nth-child(4),
                 .app-menu-item:nth-child(5) {
-                    grid-column: auto; /* Reset penataan kolom di desktop */
+                    grid-column: auto;
                 }
             }
         </style>
@@ -308,11 +309,6 @@ export default {
         </div>
         <div class="locations-container" id="locations-container">
             <h3 class="section-title">Find Your Space</h3>
-            <div id="sort-by-tabs" class="filter-sort-tabs">
-                <button class="filter-sort-tab active" data-sort-by="nearest">Nearest</button>
-                <button class="filter-sort-tab" data-sort-by="cheapest">Cheapest</button>
-                <button class="filter-sort-tab" data-sort-by="top_rated">Top Rated</button>
-            </div>
             <div id="nearby-locations-list" class="grid-view">
                 <div class="location-card-skeleton skeleton"></div>
             </div>

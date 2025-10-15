@@ -1401,3 +1401,257 @@ html, body {
     font-size: 20px !important;
     font-weight: bold;
 }
+
+/* =============================================== */
+/* Storage Type Tabs Styling
+/* =============================================== */
+
+.storage-type-tabs-container {
+    display: flex;
+    flex-wrap: wrap; /* Memastikan tab bisa wrap di layar kecil */
+    border-bottom: 2px solid #e5e7eb; /* Garis bawah untuk kontainer tab */
+    margin-bottom: 1rem;
+}
+
+.storage-type-tab {
+    padding: 0.75rem 1.5rem;
+    cursor: pointer;
+    border: none;
+    background-color: transparent;
+    color: #6b7280; /* Warna abu-abu untuk tab tidak aktif */
+    font-weight: 500;
+    font-size: 0.875rem; /* 14px */
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px; /* Membuat border bawah tab menimpa border kontainer */
+    transition: all 0.2s ease-in-out;
+}
+
+/* Efek hover untuk semua tab */
+.storage-type-tab:hover {
+    background-color: #f3f4f6; /* Sedikit abu-abu saat dihover */
+    color: #1f2937;
+}
+
+/* Gaya untuk tab yang sedang aktif */
+.storage-type-tab.active {
+    color: #2563eb; /* Warna biru untuk teks tab aktif */
+    border-color: #2563eb; /* Garis bawah biru untuk tab aktif */
+    font-weight: 600;
+}
+
+/* Efek hover KHUSUS untuk tab yang sedang aktif */
+.storage-type-tab.active:hover {
+    background-color: #eff6ff; /* Warna biru yang lebih terang saat dihover */
+}
+
+/* Konten tab */
+.storage-type-content {
+    display: none; /* Semua konten disembunyikan secara default */
+}
+
+.storage-type-content.active {
+    display: block; /* Hanya konten dengan kelas 'active' yang ditampilkan */
+    animation: fadeIn 0.5s; /* Animasi fade-in sederhana */
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* =============================================== */
+/* Cropper Modal & Image Upload Styling
+/* =============================================== */
+
+/* Pastikan gambar di dalam cropper tidak melebihi kontainernya */
+.img-container > img {
+    max-width: 100%;
+}
+
+/* Styling untuk area preview gambar di form size */
+.size-image-preview {
+    width: 100%;
+    height: 120px; /* Tinggi tetap untuk konsistensi */
+    border: 2px dashed var(--neutral-300);
+    border-radius: var(--border-radius-base);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--neutral-50);
+    cursor: pointer;
+    overflow: hidden; /* Pastikan gambar tidak keluar dari border */
+    position: relative;
+}
+
+.size-image-preview:hover {
+    border-color: var(--primary-500);
+    background-color: var(--primary-50);
+}
+
+.size-image-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* Gambar akan menutupi area tanpa distorsi */
+}
+
+.size-image-preview .placeholder-icon {
+    color: var(--neutral-400);
+    font-size: 2rem;
+}
+
+.size-image-preview .change-image-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background-color: rgba(0, 0, 0, 0.6);
+    color: white;
+    text-align: center;
+    padding: 0.25rem;
+    font-size: 0.75rem;
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
+}
+
+.size-image-preview:hover .change-image-overlay {
+    opacity: 1;
+}
+/* =============================================== */
+/* Perbaikan Hover Tab Aktif & Restyle Modal
+/* =============================================== */
+
+/* PERBAIKAN: Efek Hover untuk Tab Utama yang Aktif */
+.tab-button.active-tab {
+    color: var(--primary-600);
+    border-color: var(--primary-600);
+}
+
+.tab-button.active-tab:hover {
+    background-color: var(--primary-50);
+    border-color: var(--primary-700);
+}
+
+
+/* RESTYLE TOTAL: Modal Manage Storage Types */
+.swal2-popup.manage-storage-types-modal {
+    width: 900px !important;
+    padding: 0 !important;
+}
+
+.manage-storage-modal-container {
+    display: flex;
+    flex-direction: column;
+    height: 70vh; /* Tinggi modal agar tidak terlalu besar */
+}
+
+.manage-storage-modal-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--neutral-200);
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--neutral-800);
+}
+
+.manage-storage-modal-body {
+    display: flex;
+    flex-grow: 1;
+    overflow: hidden;
+}
+
+.storage-type-sidebar {
+    width: 250px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--neutral-200);
+    background-color: var(--neutral-50);
+    overflow-y: auto;
+    padding: 0.5rem;
+}
+
+.storage-type-tab-item {
+    display: flex;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.25rem;
+    border-radius: var(--border-radius-base);
+    cursor: pointer;
+    font-weight: 500;
+    color: var(--neutral-700);
+    transition: all 0.2s ease-in-out;
+    border: 1px solid transparent;
+}
+
+.storage-type-tab-item:hover {
+    background-color: var(--primary-100);
+    color: var(--primary-700);
+}
+
+.storage-type-tab-item.active {
+    background-color: var(--primary-600);
+    color: white;
+    font-weight: 600;
+    box-shadow: var(--shadow-sm);
+}
+
+.storage-type-tab-item.add-new {
+    color: var(--success-600);
+    font-weight: 600;
+}
+.storage-type-tab-item.add-new:hover {
+    background-color: var(--success-50);
+}
+.storage-type-tab-item.add-new.active {
+    background-color: var(--success-600);
+    color: white;
+}
+
+.storage-type-content-panel {
+    flex-grow: 1;
+    padding: 1.5rem;
+    overflow-y: auto;
+}
+
+.storage-type-content {
+    display: none;
+}
+
+.storage-type-content.active {
+    display: block;
+    animation: fadeIn 0.4s;
+}
+
+.storage-type-form .form-label {
+    margin-bottom: 0.25rem;
+}
+
+.storage-type-image-preview {
+    width: 100%;
+    height: 150px;
+    border-radius: var(--border-radius-base);
+    border: 2px dashed var(--neutral-300);
+    cursor: pointer;
+    background-color: var(--neutral-100);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+}
+.storage-type-image-preview:hover {
+    border-color: var(--primary-500);
+}
+.storage-type-image-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.storage-type-image-preview .placeholder-icon {
+    font-size: 2rem;
+    color: var(--neutral-400);
+}
+.storage-type-actions {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--neutral-200);
+    display: flex;
+    justify-content: space-between;
+}

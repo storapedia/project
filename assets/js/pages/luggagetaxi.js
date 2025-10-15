@@ -4,6 +4,10 @@ import { renderLocationDetailModal } from '../ui/modals.js';
 import { publicDataCache } from '../main.js';
 import { db } from '../firebase-init.js';
 
+/**
+ * Renders a filtered list of locations based on a specific category name.
+ * @param {string} categoryName - The name of the category to filter by (e.g., "Luggage Taxi").
+ */
 async function renderFilteredLocations(categoryName) {
     const container = document.getElementById('locations-list');
     if (!container) return;
@@ -16,7 +20,7 @@ async function renderFilteredLocations(categoryName) {
     }));
 
     locationsArray = locationsArray.filter(loc =>
-        loc.categories && loc.categories.some(cat => cat.name === categoryName)
+        loc.categories && loc.categories.some(cat => cat.name.trim() === categoryName)
     );
     
     if (locationsArray.length === 0) {
@@ -30,9 +34,13 @@ async function renderFilteredLocations(categoryName) {
         const averageRating = reviewsForLocation.length > 0 ? (reviewsForLocation.reduce((sum, r) => sum + r.rating, 0) / reviewsForLocation.length) : 0;
         const reviewCount = reviewsForLocation.length;
 
+        const imageUrl = loc.imageUrl 
+            ? `/.netlify/functions/get-photo?key=${encodeURIComponent(loc.imageUrl.split('key=')[1] || loc.imageUrl)}`
+            : 'https://placehold.co/300x150';
+
         return `
             <div class="location-card" data-location-id="${loc.id}">
-                <img src="${loc.imageUrl || 'https://placehold.co/300x150'}" alt="${loc.name}" class="location-card-img">
+                <img src="${imageUrl}" alt="${loc.name}" class="location-card-img">
                 <div class="location-card-content">
                     <div>
                         <h4 class="location-card-title">${loc.name}</h4>
@@ -60,7 +68,7 @@ export default {
     render: async () => `
         <div class="category-hero-section luggage-taxi-banner">
             <h1>Luggage Taxi</h1>
-            <p>Antar jemput barang bawaan Anda dari dan ke lokasi tujuan.</p>
+            <p>Door-to-door luggage pickup and drop-off service.</p>
         </div>
         <div class="locations-container" id="locations-container">
             <h3 class="section-title">Available Locations</h3>

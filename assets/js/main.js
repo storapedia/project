@@ -1,7 +1,7 @@
 import { initializeFirebase, db } from './firebase-init.js';
 import { initializeRouter, registerRoute, router } from './router.js';
 import { renderAppShell } from './ui/components.js';
-import { onAuthStateChanged } from './services/auth.js';
+import { onAuthStateChanged, initializeAuth } from './services/auth.js';
 import { renderBookingFlowModal } from './ui/modals.js';
 import { fetchAllPublicData } from './services/firebase-api.js';
 import { showLoader } from './ui/ui-helpers.js';
@@ -22,22 +22,16 @@ export const publicDataCache = {
     shopProducts: null
 };
 
-// --- Global State ---
 let userNotificationSound = new Audio('/assets/sounds/notification.wav');
 let lastUserNotificationCount = 0;
 let hasUserInteracted = false;
 
-// --- Service Worker & PWA Installation Logic ---
 function setupServiceWorker() {
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
             navigator.serviceWorker.register('/service-worker.js')
-                .then(registration => {
-                    console.log('Service Worker terdaftar: ', registration);
-                })
-                .catch(err => {
-                    console.log('Gagal mendaftar Service Worker: ', err);
-                });
+                .then(registration => console.log('Service Worker terdaftar: ', registration))
+                .catch(err => console.log('Gagal mendaftar Service Worker: ', err));
         });
     }
 }
@@ -106,59 +100,41 @@ function setupInstallBanner() {
     });
 
     window.addEventListener('appinstalled', () => {
-        console.log('Storapedia was installed.');
         installBanner.classList.add('hidden');
         deferredPrompt = null;
     });
 }
 
-// --- CSS Loading Logic ---
 function loadDynamicStyles() {
     const existingLink = document.getElementById('dynamic-stylesheet');
-    if (existingLink) {
-        existingLink.remove();
-    }
+    if (existingLink) existingLink.remove();
 
     const link = document.createElement('link');
     link.id = 'dynamic-stylesheet';
     link.rel = 'stylesheet';
-
-    if (window.innerWidth >= 1024) {
-        link.href = '/assets/css/style2.css';
-    } else {
-        link.href = '/assets/css/style.css';
-    }
-
+    link.href = window.innerWidth >= 1024 ? '/assets/css/style2.css' : '/assets/css/style.css';
     document.head.appendChild(link);
 }
 
-
-// --- Notification Logic ---
 function listenForUserNotifications(userId) {
     if (!userId) return;
-    if (window.userNotificationListener) {
-        window.userNotificationListener.off();
-    }
+    if (window.userNotificationListener) window.userNotificationListener.off();
+
     window.userNotificationListener = db.ref(`notifications/users/${userId}`);
     window.userNotificationListener.on('value', (snapshot) => {
         const unreadNotifications = [];
         snapshot.forEach((childSnapshot) => {
-            const notification = childSnapshot.val();
-            if (!notification.read) {
-                unreadNotifications.push(notification);
-            }
+            if (!childSnapshot.val().read) unreadNotifications.push(childSnapshot.val());
         });
+        
         const currentUnreadCount = unreadNotifications.length;
         const badge = document.getElementById('notification-badge');
+        
         if (badge) {
-            if (currentUnreadCount > 0) {
-                badge.textContent = currentUnreadCount;
-                badge.classList.remove('hidden');
-                if (currentUnreadCount > lastUserNotificationCount && hasUserInteracted) {
-                    userNotificationSound.play().catch(e => console.warn("Notification sound failed:", e));
-                }
-            } else {
-                badge.classList.add('hidden');
+            badge.textContent = currentUnreadCount > 0 ? currentUnreadCount : '';
+            badge.classList.toggle('hidden', currentUnreadCount === 0);
+            if (currentUnreadCount > lastUserNotificationCount && hasUserInteracted) {
+                userNotificationSound.play().catch(e => console.warn("Notification sound failed:", e));
             }
         }
         lastUserNotificationCount = currentUnreadCount;
@@ -167,26 +143,40 @@ function listenForUserNotifications(userId) {
     });
 }
 
-// --- App Initialization ---
+// --- FUNGSI BARU UNTUK MENGHAPUS TOMBOL WHATSAPP ---
+function removeFloatingWhatsAppButton() {
+    const floatingButton = document.querySelector('.floating-whatsapp');
+    if (floatingButton) {
+        floatingButton.remove();
+        console.log('Floating WhatsApp button removed.');
+    }
+}
+
 function handleResize() {
-    const isDesktop = window.innerWidth >= 1024;
-    renderAppShell(document.getElementById('app'), isDesktop);
+    renderAppShell(document.getElementById('app'), window.innerWidth >= 1024);
     loadDynamicStyles();
+    removeFloatingWhatsAppButton(); // Panggil juga saat resize
     router();
 }
 
 async function main() {
     try {
         const appRoot = document.getElementById('app');
-
         renderAppShell(appRoot, window.innerWidth >= 1024);
         loadDynamicStyles();
+        removeFloatingWhatsAppButton(); // Panggil saat aplikasi pertama kali dimuat
         window.addEventListener('resize', handleResize);
         setupServiceWorker();
         setupInstallBanner();
 
         await initializeFirebase();
-
+        
+        const initialUser = await initializeAuth();
+        const restrictedPaths = ['#/bookings', '#/profile', '#/inbox', '#/notifications'];
+        if (!initialUser && restrictedPaths.includes(location.hash)) {
+            location.hash = '#/auth';
+        }
+        
         registerRoute('/', Home);
         registerRoute('/map', Map);
         registerRoute('/bookings', Bookings);
@@ -194,18 +184,12 @@ async function main() {
         registerRoute('/auth', Auth);
         registerRoute('/inbox', Inbox);
         registerRoute('/notifications', Notifications);
-        // ... rute lainnya
-        registerRoute('/404', {
-            render: async () => `<div class="page-header"><h2 class="page-title">Page Not Found</h2></div>`
-        });
-
+        registerRoute('/404', { render: async () => `<div class="page-header"><h2 class="page-title">Page Not Found</h2></div>` });
         initializeRouter();
         router();
 
-        document.body.addEventListener('click', () => {
-            hasUserInteracted = true;
-        }, { once: true });
-
+        document.body.addEventListener('click', () => { hasUserInteracted = true; }, { once: true });
+        
         onAuthStateChanged(user => {
             const pendingBooking = sessionStorage.getItem('pendingBooking');
             if (user && pendingBooking) {
@@ -213,11 +197,6 @@ async function main() {
                 const restoredState = JSON.parse(pendingBooking);
                 location.hash = '#/';
                 setTimeout(() => renderBookingFlowModal(restoredState), 100);
-            } else {
-                const restrictedPaths = ['#/bookings', '#/profile', '#/inbox', '#/notifications'];
-                if (!user && restrictedPaths.includes(location.hash)) {
-                    location.hash = '#/auth';
-                }
             }
 
             if (user) {
@@ -232,11 +211,7 @@ async function main() {
 
         showLoader(true, 'Loading initial data...');
         const data = await fetchAllPublicData();
-        publicDataCache.locations = data.locations;
-        publicDataCache.reviews = data.reviews;
-        publicDataCache.vouchers = data.vouchers;
-        publicDataCache.easySteps = data.easySteps;
-        publicDataCache.shopProducts = data.shopProducts;
+        Object.assign(publicDataCache, data);
         showLoader(false);
 
     } catch (error) {
